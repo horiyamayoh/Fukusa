@@ -221,6 +221,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "fast-xml-parser": "^5.5.5",
     "lru-cache": "^10.1.0",
     "uuid": "^9.0.0"
   }

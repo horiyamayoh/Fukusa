@@ -41,6 +41,10 @@ export class MemoryCache {
     });
   }
 
+  public delete(key: string): void {
+    this.cache.delete(key);
+  }
+
   public deleteWhere(predicate: (entry: MemoryCacheEntry) => boolean): void {
     for (const [key, entry] of this.cache.entries()) {
       if (predicate(entry)) {

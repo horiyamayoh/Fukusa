@@ -3,8 +3,16 @@ import * as path from 'path';
 import { BlameLineInfo, RevisionRef } from '../common/types';
 import { execFileBuffered } from '../../util/process';
 
+const gitRevisionPattern = /^[0-9a-f]{4,64}$/i;
+
 function normalizeGitPath(relativePath: string): string {
   return relativePath.split(path.sep).join(path.posix.sep);
+}
+
+function assertValidGitRevision(revision: string): void {
+  if (!gitRevisionPattern.test(revision)) {
+    throw new Error(`Invalid Git revision: ${revision}`);
+  }
 }
 
 export class GitCli {
@@ -55,6 +63,7 @@ export class GitCli {
   }
 
   public async getSnapshot(repoRoot: string, relativePath: string, revision: string): Promise<Uint8Array> {
+    assertValidGitRevision(revision);
     const { stdout } = await execFileBuffered('git', [
       '-C',
       repoRoot,
@@ -67,6 +76,7 @@ export class GitCli {
   public async getBlame(repoRoot: string, relativePath: string, revision?: string): Promise<BlameLineInfo[]> {
     const args = ['-C', repoRoot, 'blame', '--line-porcelain'];
     if (revision) {
+      assertValidGitRevision(revision);
       args.push(revision);
     }
     args.push('--', normalizeGitPath(relativePath));
@@ -131,6 +141,8 @@ export class GitCli {
   }
 
   public async getDiff(repoRoot: string, relativePath: string, leftRevision: string, rightRevision: string): Promise<string> {
+    assertValidGitRevision(leftRevision);
+    assertValidGitRevision(rightRevision);
     const { stdout } = await execFileBuffered('git', [
       '-C',
       repoRoot,

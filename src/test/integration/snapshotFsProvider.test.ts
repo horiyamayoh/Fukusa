@@ -61,8 +61,12 @@ suite('Integration: SnapshotFsProvider', () => {
       new PersistentCache(vscode.Uri.file(storageDir)),
       output
     );
-    const provider1 = new SnapshotFsProvider(repositoryService, uriFactory, cacheService1);
+    const provider1 = new SnapshotFsProvider(repositoryService, uriFactory, cacheService1, output);
     const uri = uriFactory.createSnapshotUri(repo, 'src/sample.ts', 'rev1');
+
+    const initialStat = await provider1.stat(uri);
+    assert.strictEqual(initialStat.size, 0);
+    assert.strictEqual(adapter.readCount, 0);
 
     const firstRead = await provider1.readFile(uri);
     assert.match(Buffer.from(firstRead).toString('utf8'), /cached = true/);
@@ -77,13 +81,14 @@ suite('Integration: SnapshotFsProvider', () => {
       new PersistentCache(vscode.Uri.file(storageDir)),
       output
     );
-    const provider2 = new SnapshotFsProvider(repositoryService, uriFactory, cacheService2);
+    const provider2 = new SnapshotFsProvider(repositoryService, uriFactory, cacheService2, output);
+    const stat = await provider2.stat(uri);
+    assert.strictEqual(stat.size, 0);
+    assert.strictEqual(adapter.readCount, 1);
+
     const thirdRead = await provider2.readFile(uri);
     assert.strictEqual(Buffer.from(thirdRead).toString('utf8'), Buffer.from(firstRead).toString('utf8'));
     assert.strictEqual(adapter.readCount, 1);
-
-    const stat = await provider2.stat(uri);
-    assert.strictEqual(stat.size, thirdRead.byteLength);
 
     output.dispose();
     await fs.rm(storageDir, { recursive: true, force: true });

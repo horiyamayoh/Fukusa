@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-import { ParsedSnapshotUri, RepoContext } from '../../adapters/common/types';
+import { ParsedSnapshotUri, RepoContext, RepositoryKind } from '../../adapters/common/types';
 import { RepositoryRegistry } from '../../application/repositoryRegistry';
 
 function toDisplayPath(relativePath: string, revision: string): string {
@@ -10,13 +10,35 @@ function toDisplayPath(relativePath: string, revision: string): string {
   return path.posix.join(parsed.dir, displayName);
 }
 
+function parseRepositoryKind(authority: string): RepositoryKind {
+  if (authority === 'git' || authority === 'svn') {
+    return authority;
+  }
+
+  throw new Error(`Unsupported snapshot URI authority: ${authority}`);
+}
+
+function normalizeRelativeSnapshotPath(relativePath: string): string {
+  const normalized = relativePath.replace(/\\/g, '/');
+  if (!normalized || path.posix.isAbsolute(normalized) || normalized.split('/').some((segment) => segment === '..')) {
+    throw new Error(`Invalid snapshot relative path: ${relativePath}`);
+  }
+
+  const cleaned = path.posix.normalize(normalized);
+  if (cleaned === '.' || cleaned.startsWith('../')) {
+    throw new Error(`Invalid snapshot relative path: ${relativePath}`);
+  }
+
+  return cleaned;
+}
+
 export class UriFactory {
   public constructor(private readonly repositoryRegistry: RepositoryRegistry) {}
 
   public createSnapshotUri(repo: RepoContext, relativePath: string, revision: string): vscode.Uri {
     this.repositoryRegistry.register(repo);
 
-    const normalizedRelativePath = relativePath.split(path.sep).join(path.posix.sep);
+    const normalizedRelativePath = normalizeRelativeSnapshotPath(relativePath.split(path.sep).join(path.posix.sep));
     const displayRelativePath = toDisplayPath(normalizedRelativePath, revision);
     const query = new URLSearchParams({
       rev: revision,
@@ -48,10 +70,10 @@ export class UriFactory {
     }
 
     const displayRelativePath = segments.slice(1).join('/');
-    const relativePath = query.get('path') ?? displayRelativePath;
+    const relativePath = normalizeRelativeSnapshotPath(query.get('path') ?? displayRelativePath);
 
     return {
-      kind: uri.authority as ParsedSnapshotUri['kind'],
+      kind: parseRepositoryKind(uri.authority),
       repoId: segments[0],
       relativePath,
       displayRelativePath,

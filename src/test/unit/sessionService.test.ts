@@ -49,4 +49,16 @@ suite('Unit: SessionService', () => {
     service.shiftWindow(session.id, 10);
     assert.strictEqual(session.visibleStartPairIndex, 1);
   });
+
+  test('evicts the oldest session when the limit is reached', () => {
+    const service = new SessionService(new UriFactory(new RepositoryRegistry()), 2);
+    const first = service.createSession(repo, vscode.Uri.file('c:/repo/src/one.ts'), 'src/one.ts', revisions, 'adjacent', 2);
+    const second = service.createSession(repo, vscode.Uri.file('c:/repo/src/two.ts'), 'src/two.ts', revisions, 'adjacent', 2);
+    const third = service.createSession(repo, vscode.Uri.file('c:/repo/src/three.ts'), 'src/three.ts', revisions, 'adjacent', 2);
+
+    assert.strictEqual(service.getSession(first.id), undefined);
+    assert.ok(service.getSession(second.id));
+    assert.ok(service.getSession(third.id));
+    assert.strictEqual(service.listSessions().length, 2);
+  });
 });

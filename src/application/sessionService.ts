@@ -7,11 +7,14 @@ import { UriFactory } from '../infrastructure/fs/uriFactory';
 export class SessionService {
   private readonly sessions = new Map<string, MultiDiffSession>();
   private readonly onDidChangeSessionsEmitter = new vscode.EventEmitter<void>();
+  private readonly maxSessions: number;
   private activeSessionId: string | undefined;
 
   public readonly onDidChangeSessions = this.onDidChangeSessionsEmitter.event;
 
-  public constructor(private readonly uriFactory: UriFactory) {}
+  public constructor(private readonly uriFactory: UriFactory, maxSessions = 20) {
+    this.maxSessions = Math.max(1, maxSessions);
+  }
 
   public createSession(
     repo: RepoContext,
@@ -21,6 +24,15 @@ export class SessionService {
     mode: SessionMode,
     visiblePairCount: number
   ): MultiDiffSession {
+    while (this.sessions.size >= this.maxSessions) {
+      const oldest = [...this.sessions.values()].sort((left, right) => left.createdAt - right.createdAt)[0];
+      if (!oldest) {
+        break;
+      }
+
+      this.removeSession(oldest.id);
+    }
+
     const pairs = this.buildPairs(repo, relativePath, revisions, mode);
     const session: MultiDiffSession = {
       id: uuidv4(),

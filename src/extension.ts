@@ -12,9 +12,6 @@ import { RepositoryRegistry } from './application/repositoryRegistry';
 import { RepositoryService } from './application/repositoryService';
 import { RevisionPickerService } from './application/revisionPickerService';
 import { SessionService } from './application/sessionService';
-import { DefinitionBridgeProvider } from './compatibility/definitionBridgeProvider';
-import { HoverBridgeProvider } from './compatibility/hoverBridgeProvider';
-import { ReferenceBridgeProvider } from './compatibility/referenceBridgeProvider';
 import { createClearAllCacheCommand, createClearCurrentRepoCacheCommand } from './commands/clearCache';
 import { CommandContext } from './commands/commandContext';
 import { createOpenForCurrentFileCommand } from './commands/openForCurrentFile';
@@ -56,7 +53,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const persistentCache = new PersistentCache(context.globalStorageUri);
   const cacheService = new CacheService(memoryCache, persistentCache, output);
 
-  const snapshotFsProvider = new SnapshotFsProvider(repositoryService, uriFactory, cacheService);
+  const snapshotFsProvider = new SnapshotFsProvider(repositoryService, uriFactory, cacheService, output);
   const languageModeResolver = new LanguageModeResolver(uriFactory);
   const revisionPickerService = new RevisionPickerService(repositoryService, cacheService);
   const sessionService = new SessionService(uriFactory);
@@ -93,9 +90,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.workspace.registerFileSystemProvider('multidiff', snapshotFsProvider, { isReadonly: true }),
     vscode.window.registerTreeDataProvider('multidiff.sessions', sessionsTreeProvider),
     vscode.window.registerTreeDataProvider('multidiff.cache', cacheTreeProvider),
-    vscode.languages.registerDefinitionProvider({ scheme: 'multidiff' }, new DefinitionBridgeProvider(compatibilityService)),
-    vscode.languages.registerHoverProvider({ scheme: 'multidiff' }, new HoverBridgeProvider(compatibilityService)),
-    vscode.languages.registerReferenceProvider({ scheme: 'multidiff' }, new ReferenceBridgeProvider(compatibilityService)),
     vscode.commands.registerCommand('multidiff.openForCurrentFile', createOpenForCurrentFileCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openForExplorerFile', createOpenForExplorerFileCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openRevisionSnapshot', createOpenRevisionSnapshotCommand(commandContext)),

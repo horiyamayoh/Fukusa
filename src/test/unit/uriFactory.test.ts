@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as vscode from 'vscode';
 
 import { RepoContext } from '../../adapters/common/types';
 import { RepositoryRegistry } from '../../application/repositoryRegistry';
@@ -21,5 +22,19 @@ suite('Unit: UriFactory', () => {
     assert.strictEqual(parsed.repoId, 'repo123');
     assert.strictEqual(parsed.relativePath, 'src/sample.ts');
     assert.strictEqual(parsed.revision, 'abcdef123456');
+  });
+
+  test('rejects unsupported snapshot authorities', () => {
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    const uri = vscode.Uri.parse('multidiff://hg/repo123/src/sample.ts?rev=abcdef12&path=src/sample.ts');
+
+    assert.throws(() => uriFactory.parseSnapshotUri(uri), /Unsupported snapshot URI authority/);
+  });
+
+  test('rejects path traversal in snapshot URIs', () => {
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    const uri = vscode.Uri.parse('multidiff://git/repo123/src/sample.ts?rev=abcdef12&path=../secret.txt');
+
+    assert.throws(() => uriFactory.parseSnapshotUri(uri), /Invalid snapshot relative path/);
   });
 });

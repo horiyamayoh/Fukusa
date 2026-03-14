@@ -14,6 +14,8 @@ export interface BlameHeatmap {
   readonly lines: readonly BlameHeatmapLine[];
 }
 
+export const WORKTREE_BLAME_CACHE_TTL_MS = 60 * 1000;
+
 export function bucketizeAge(timestamp: number | undefined, now = Date.now()): number {
   if (!timestamp) {
     return 4;
@@ -50,7 +52,8 @@ export class BlameService {
     const adapter = this.repositoryService.getAdapter(resource.repo.kind);
     const result = await this.cacheService.getOrLoadJson(
       createBlameCacheKey(resource.repo, resource.relativePath, resource.revision),
-      () => adapter.getBlame(resource.repo, resource.relativePath, resource.revision)
+      () => adapter.getBlame(resource.repo, resource.relativePath, resource.revision),
+      resource.revision ? undefined : { maxAgeMs: WORKTREE_BLAME_CACHE_TTL_MS }
     );
 
     const lines = result.value.map((line) => ({

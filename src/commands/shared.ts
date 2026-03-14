@@ -86,12 +86,12 @@ export async function openSession(context: CommandContext, resource: ResolvedRes
 export async function warmSnapshots(context: CommandContext, resource: ResolvedResource, count = 10): Promise<void> {
   const adapter = context.repositoryService.getAdapter(resource.repo.kind);
   const revisions = await context.revisionPickerService.getHistory(resource, count);
-  for (const revision of revisions) {
+  await Promise.all(revisions.map(async (revision) => {
     await context.cacheService.getOrLoadBytes(
       createSnapshotCacheKey(resource.repo, resource.relativePath, revision.id),
       () => adapter.getSnapshot(resource.repo, resource.relativePath, revision.id)
     );
-  }
+  }));
 }
 
 export function getVisiblePairCount(): number {

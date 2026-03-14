@@ -17,6 +17,37 @@ export interface PersistentCacheEntry {
   readonly metadata: CacheEntryMetadata;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isValidMetadata(value: unknown): value is CacheEntryMetadata {
+  return isRecord(value)
+    && typeof value.key === 'string'
+    && typeof value.namespace === 'string'
+    && typeof value.repoId === 'string'
+    && typeof value.relativePath === 'string'
+    && typeof value.size === 'number'
+    && Number.isFinite(value.size)
+    && value.size >= 0
+    && typeof value.updatedAt === 'number'
+    && Number.isFinite(value.updatedAt);
+}
+
+function normalizeCacheFileName(fileName: string): string | undefined {
+  const normalized = fileName.replace(/\\/g, '/');
+  if (!normalized || path.posix.isAbsolute(normalized) || normalized.split('/').some((segment) => segment === '..')) {
+    return undefined;
+  }
+
+  const cleaned = path.posix.normalize(normalized);
+  if (cleaned === '.' || cleaned.startsWith('../')) {
+    return undefined;
+  }
+
+  return cleaned;
+}
+
 export class PersistentCache {
   private initialized = false;
   private readonly rootPath: string;
@@ -36,7 +67,14 @@ export class PersistentCache {
     }
 
     try {
-      const data = await fs.readFile(path.join(this.rootPath, entry.fileName));
+      const entryPath = this.resolveEntryPath(entry.fileName);
+      if (!entryPath) {
+        this.index.delete(key);
+        await this.writeIndex();
+        return undefined;
+      }
+
+      const data = await fs.readFile(entryPath);
       return {
         kind: entry.kind,
         value: entry.kind === 'binary' ? new Uint8Array(data) : JSON.parse(data.toString('utf8')),
@@ -58,8 +96,12 @@ export class PersistentCache {
     await this.ensureInitialized();
 
     const extension = kind === 'binary' ? 'bin' : 'json';
-    const fileName = path.join(metadata.namespace, `${stableHash(key, 20)}.${extension}`);
-    const fullPath = path.join(this.rootPath, fileName);
+    const fileName = `${metadata.namespace}/${stableHash(key, 20)}.${extension}`;
+    const fullPath = this.resolveEntryPath(fileName);
+    if (!fullPath) {
+      throw new Error(`Failed to resolve cache path for ${fileName}.`);
+    }
+
     await fs.mkdir(path.dirname(fullPath), { recursive: true });
     const contents = kind === 'binary'
       ? Buffer.from(value as Uint8Array)
@@ -71,6 +113,22 @@ export class PersistentCache {
       metadata,
       fileName
     });
+    await this.writeIndex();
+  }
+
+  public async delete(key: string): Promise<void> {
+    await this.ensureInitialized();
+    const entry = this.index.get(key);
+    if (!entry) {
+      return;
+    }
+
+    this.index.delete(key);
+    const entryPath = this.resolveEntryPath(entry.fileName);
+    if (entryPath) {
+      await fs.rm(entryPath, { force: true });
+    }
+
     await this.writeIndex();
   }
 
@@ -87,7 +145,10 @@ export class PersistentCache {
       }
 
       this.index.delete(key);
-      await fs.rm(path.join(this.rootPath, entry.fileName), { force: true });
+      const entryPath = this.resolveEntryPath(entry.fileName);
+      if (entryPath) {
+        await fs.rm(entryPath, { force: true });
+      }
     }));
 
     await this.writeIndex();
@@ -132,21 +193,87 @@ export class PersistentCache {
     }
 
     await fs.mkdir(this.rootPath, { recursive: true });
+    let shouldRewriteIndex = false;
     try {
       const contents = await fs.readFile(this.indexPath, 'utf8');
-      const parsed = JSON.parse(contents) as Record<string, PersistedIndexEntry>;
-      for (const [key, value] of Object.entries(parsed)) {
+      const { entries, hasInvalidEntries } = this.parseIndex(contents);
+      shouldRewriteIndex = hasInvalidEntries;
+      for (const [key, value] of entries) {
         this.index.set(key, value);
       }
-    } catch {
-      // Fresh cache directory.
+    } catch (error) {
+      const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : undefined;
+      shouldRewriteIndex = code !== 'ENOENT';
     }
 
     this.initialized = true;
+    if (shouldRewriteIndex) {
+      await this.writeIndex();
+    }
   }
 
   private async writeIndex(): Promise<void> {
     const serialized = Object.fromEntries(this.index.entries());
     await fs.writeFile(this.indexPath, JSON.stringify(serialized, undefined, 2), 'utf8');
+  }
+
+  private parseIndex(contents: string): { entries: Array<[string, PersistedIndexEntry]>; hasInvalidEntries: boolean } {
+    const parsed = JSON.parse(contents) as unknown;
+    if (!isRecord(parsed)) {
+      throw new Error('Invalid cache index format.');
+    }
+
+    const entries: Array<[string, PersistedIndexEntry]> = [];
+    let hasInvalidEntries = false;
+
+    for (const [key, value] of Object.entries(parsed)) {
+      const entry = this.parseIndexEntry(key, value);
+      if (!entry) {
+        hasInvalidEntries = true;
+        continue;
+      }
+
+      entries.push([key, entry]);
+    }
+
+    return { entries, hasInvalidEntries };
+  }
+
+  private parseIndexEntry(key: string, value: unknown): PersistedIndexEntry | undefined {
+    if (!isRecord(value)) {
+      return undefined;
+    }
+
+    if (value.kind !== 'binary' && value.kind !== 'json') {
+      return undefined;
+    }
+
+    if (!isValidMetadata(value.metadata) || value.metadata.key !== key) {
+      return undefined;
+    }
+
+    if (typeof value.fileName !== 'string') {
+      return undefined;
+    }
+
+    const fileName = normalizeCacheFileName(value.fileName);
+    if (!fileName) {
+      return undefined;
+    }
+
+    return {
+      kind: value.kind,
+      metadata: value.metadata,
+      fileName
+    };
+  }
+
+  private resolveEntryPath(fileName: string): string | undefined {
+    const normalized = normalizeCacheFileName(fileName);
+    if (!normalized) {
+      return undefined;
+    }
+
+    return path.join(this.rootPath, ...normalized.split('/'));
   }
 }
