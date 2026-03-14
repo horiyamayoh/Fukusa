@@ -1,0 +1,9 @@
+.vscode/**
+.vscode-test/**
+src/**
+out/test/**
+node_modules/.cache/**
+MultiDiffViewer_design_v0.2.md
+.eslintrc.json
+tsconfig.json
+.gitignore

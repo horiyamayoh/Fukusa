@@ -1,0 +1,227 @@
+{
+  "name": "multidiffviewer",
+  "displayName": "MultiDiffViewer",
+  "description": "N-way diff viewer orchestrating native diff editors",
+  "version": "0.0.1",
+  "publisher": "multidiffviewer",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "homepage": "https://github.com/horiyamayoh/MultiDiffViewer#readme",
+  "bugs": {
+    "url": "https://github.com/horiyamayoh/MultiDiffViewer/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/horiyamayoh/MultiDiffViewer.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "svn",
+    "diff",
+    "history",
+    "blame"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "extensionDependencies": [
+    "vscode.git"
+  ],
+  "activationEvents": [
+    "onCommand:multidiff.openForCurrentFile",
+    "onCommand:multidiff.openForExplorerFile",
+    "onCommand:multidiff.openRevisionSnapshot",
+    "onCommand:multidiff.openSessionAdjacent",
+    "onCommand:multidiff.openSessionBase",
+    "onCommand:multidiff.shiftWindowLeft",
+    "onCommand:multidiff.shiftWindowRight",
+    "onCommand:multidiff.toggleBlameHeatmap",
+    "onCommand:multidiff.cache.warmCurrentFile",
+    "onCommand:multidiff.cache.clearCurrentRepo",
+    "onCommand:multidiff.cache.clearAll",
+    "onCommand:multidiff.compatibility.openSnapshotAsTempFile",
+    "onFileSystem:multidiff",
+    "onView:multidiff.sessions",
+    "onView:multidiff.cache"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "multidiff.openForCurrentFile",
+        "title": "MultiDiff: Open for Current File",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.openForExplorerFile",
+        "title": "MultiDiff: Open for This File",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.openRevisionSnapshot",
+        "title": "MultiDiff: Open Revision Snapshot",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.openSessionAdjacent",
+        "title": "MultiDiff: Open Session (Adjacent)",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.openSessionBase",
+        "title": "MultiDiff: Open Session (Base)",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.shiftWindowLeft",
+        "title": "MultiDiff: Shift Window Left",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.shiftWindowRight",
+        "title": "MultiDiff: Shift Window Right",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.toggleBlameHeatmap",
+        "title": "MultiDiff: Toggle Blame Heatmap",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.cache.warmCurrentFile",
+        "title": "MultiDiff: Warm Cache for Current File",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.cache.clearCurrentRepo",
+        "title": "MultiDiff: Clear Cache for Current Repository",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.cache.clearAll",
+        "title": "MultiDiff: Clear All Cache",
+        "category": "MultiDiff"
+      },
+      {
+        "command": "multidiff.compatibility.openSnapshotAsTempFile",
+        "title": "MultiDiff: Open Snapshot as Temp File",
+        "category": "MultiDiff"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "multidiff.openForExplorerFile",
+          "group": "3_compare",
+          "when": "resourceScheme == file"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "multidiff.sessions",
+          "name": "MultiDiff Sessions"
+        },
+        {
+          "id": "multidiff.cache",
+          "name": "MultiDiff Cache"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "MultiDiffViewer",
+      "properties": {
+        "multidiff.native.visiblePairCount": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "description": "Number of diff pairs shown at once in a native MultiDiff session."
+        },
+        "multidiff.native.maxVisiblePairCount": {
+          "type": "number",
+          "default": 6,
+          "minimum": 1,
+          "description": "Hard limit for visible diff pairs opened side-by-side."
+        },
+        "multidiff.blame.mode": {
+          "type": "string",
+          "default": "age",
+          "enum": [
+            "age"
+          ],
+          "description": "Blame heatmap mode."
+        },
+        "multidiff.blame.showOverviewRuler": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show blame colors in the overview ruler."
+        },
+        "multidiff.cache.maxSizeMb": {
+          "type": "number",
+          "default": 512,
+          "minimum": 16,
+          "description": "Maximum in-memory cache size in MiB."
+        },
+        "multidiff.snapshot.openMode": {
+          "type": "string",
+          "default": "virtual",
+          "enum": [
+            "virtual",
+            "tempFile"
+          ],
+          "description": "How snapshots are opened."
+        },
+        "multidiff.compatibility.definitionFallback": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ],
+          "description": "Whether to force temp-file compatibility fallback for language features."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node ./out/test/runTest.js --grep \"^Unit:\"",
+    "test:integration": "node ./out/test/runIntegration.js",
+    "lint": "eslint src --ext .ts",
+    "package:vsix": "vsce package --pre-release",
+    "publish:prerelease": "vsce publish --pre-release",
+    "publish:release": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.0",
+    "@types/sinon": "^17.0.3",
+    "@types/uuid": "^9.0.7",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^3.7.1",
+    "eslint": "^8.57.1",
+    "mocha": "^10.2.0",
+    "sinon": "^17.0.1",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "lru-cache": "^10.1.0",
+    "uuid": "^9.0.0"
+  }
+}
