@@ -14,7 +14,7 @@ async function main(): Promise<void> {
 
     const extensionDevelopmentPath = await createAliasIfNeeded(path.resolve(__dirname, '../../'));
     const extensionTestsPath = path.resolve(extensionDevelopmentPath, 'out/test/suite/index');
-    const cachePath = path.join(os.tmpdir(), 'multidiffviewer-vscode-cache');
+    const cachePath = path.join(os.tmpdir(), 'fukusa-vscode-cache');
     const vscodeExecutablePath = await download({
       cachePath,
       version: '1.96.0',
@@ -39,7 +39,7 @@ async function createAliasIfNeeded(extensionDevelopmentPath: string): Promise<st
     return extensionDevelopmentPath;
   }
 
-  const aliasPath = path.join(os.tmpdir(), 'multidiffviewer-ext-test');
+  const aliasPath = path.join(os.tmpdir(), 'fukusa-ext-test');
   await fs.rm(aliasPath, { recursive: true, force: true });
   await fs.symlink(extensionDevelopmentPath, aliasPath, 'junction');
   return aliasPath;

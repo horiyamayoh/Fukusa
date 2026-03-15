@@ -30,12 +30,12 @@ export async function createTempDir(prefix: string): Promise<string> {
 }
 
 export async function createGitRepoFixture(): Promise<GitRepoFixture> {
-  const root = await createTempDir('multidiff-git-');
+  const root = await createTempDir('fukusa-git-');
   const filePath = path.join(root, 'sample.ts');
 
   run('git', ['init'], root);
   run('git', ['config', 'user.email', 'test@example.com'], root);
-  run('git', ['config', 'user.name', 'MultiDiff Test'], root);
+  run('git', ['config', 'user.name', 'Fukusa Test'], root);
 
   await fs.writeFile(filePath, 'export const value = 1;\n', 'utf8');
   run('git', ['add', 'sample.ts'], root);
@@ -54,7 +54,7 @@ export async function createGitRepoFixture(): Promise<GitRepoFixture> {
 }
 
 export async function createSvnRepoFixture(): Promise<SvnRepoFixture> {
-  const root = await createTempDir('multidiff-svn-');
+  const root = await createTempDir('fukusa-svn-');
   const repositoryPath = path.join(root, 'repo');
   const workingCopy = path.join(root, 'wc');
   const filePath = path.join(workingCopy, 'sample.ts');

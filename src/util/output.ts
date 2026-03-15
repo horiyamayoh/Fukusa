@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 export class OutputLogger implements vscode.Disposable {
   private readonly channel: vscode.OutputChannel;
 
-  public constructor(name = 'MultiDiffViewer') {
+  public constructor(name = 'Fukusa') {
     this.channel = vscode.window.createOutputChannel(name);
   }
 

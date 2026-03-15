@@ -1,7 +1,7 @@
 {
-  "name": "multidiffviewer",
-  "displayName": "MultiDiffViewer",
-  "description": "N-way diff viewer orchestrating native diff editors",
+  "name": "fukusa",
+  "displayName": "Fukusa",
+  "description": "Fukusa: N-way diff viewer orchestrating native diff editors",
   "version": "0.0.1",
   "publisher": "multidiffviewer",
   "license": "MIT",
@@ -22,6 +22,7 @@
     "Other"
   ],
   "keywords": [
+    "fukusa",
     "git",
     "svn",
     "diff",
@@ -56,63 +57,63 @@
     "commands": [
       {
         "command": "multidiff.openForCurrentFile",
-        "title": "MultiDiff: Open for Current File",
-        "category": "MultiDiff"
+        "title": "Fukusa: Open for Current File",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.openForExplorerFile",
-        "title": "MultiDiff: Open for This File",
-        "category": "MultiDiff"
+        "title": "Fukusa: Open for This File",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.openRevisionSnapshot",
-        "title": "MultiDiff: Open Revision Snapshot",
-        "category": "MultiDiff"
+        "title": "Fukusa: Open Revision Snapshot",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.openSessionAdjacent",
-        "title": "MultiDiff: Open Session (Adjacent)",
-        "category": "MultiDiff"
+        "title": "Fukusa: Open Session (Adjacent)",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.openSessionBase",
-        "title": "MultiDiff: Open Session (Base)",
-        "category": "MultiDiff"
+        "title": "Fukusa: Open Session (Base)",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.shiftWindowLeft",
-        "title": "MultiDiff: Shift Window Left",
-        "category": "MultiDiff"
+        "title": "Fukusa: Shift Window Left",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.shiftWindowRight",
-        "title": "MultiDiff: Shift Window Right",
-        "category": "MultiDiff"
+        "title": "Fukusa: Shift Window Right",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.toggleBlameHeatmap",
-        "title": "MultiDiff: Toggle Blame Heatmap",
-        "category": "MultiDiff"
+        "title": "Fukusa: Toggle Blame Heatmap",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.cache.warmCurrentFile",
-        "title": "MultiDiff: Warm Cache for Current File",
-        "category": "MultiDiff"
+        "title": "Fukusa: Warm Cache for Current File",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.cache.clearCurrentRepo",
-        "title": "MultiDiff: Clear Cache for Current Repository",
-        "category": "MultiDiff"
+        "title": "Fukusa: Clear Cache for Current Repository",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.cache.clearAll",
-        "title": "MultiDiff: Clear All Cache",
-        "category": "MultiDiff"
+        "title": "Fukusa: Clear All Cache",
+        "category": "Fukusa"
       },
       {
         "command": "multidiff.compatibility.openSnapshotAsTempFile",
-        "title": "MultiDiff: Open Snapshot as Temp File",
-        "category": "MultiDiff"
+        "title": "Fukusa: Open Snapshot as Temp File",
+        "category": "Fukusa"
       }
     ],
     "menus": {
@@ -128,22 +129,22 @@
       "explorer": [
         {
           "id": "multidiff.sessions",
-          "name": "MultiDiff Sessions"
+          "name": "Fukusa Sessions"
         },
         {
           "id": "multidiff.cache",
-          "name": "MultiDiff Cache"
+          "name": "Fukusa Cache"
         }
       ]
     },
     "configuration": {
-      "title": "MultiDiffViewer",
+      "title": "Fukusa",
       "properties": {
         "multidiff.native.visiblePairCount": {
           "type": "number",
           "default": 3,
           "minimum": 1,
-          "description": "Number of diff pairs shown at once in a native MultiDiff session."
+          "description": "Number of diff pairs shown at once in a native Fukusa session."
         },
         "multidiff.native.maxVisiblePairCount": {
           "type": "number",

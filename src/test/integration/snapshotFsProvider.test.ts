@@ -42,7 +42,7 @@ suite('Integration: SnapshotFsProvider', () => {
   }
 
   test('reads snapshots through adapter and cache layers', async () => {
-    const storageDir = await createTempDir('multidiff-cache-');
+    const storageDir = await createTempDir('fukusa-cache-');
     await fs.mkdir(storageDir, { recursive: true });
 
     const output = new OutputLogger('SnapshotFsProvider Test');

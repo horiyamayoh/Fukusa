@@ -11,13 +11,13 @@ export function createClearCurrentRepoCacheCommand(context: CommandContext): () 
     }
 
     await context.cacheService.clearRepo(getRepoCacheId(resource));
-    void vscode.window.showInformationMessage('Cleared MultiDiff cache for current repository.');
+    void vscode.window.showInformationMessage('Cleared Fukusa cache for current repository.');
   };
 }
 
 export function createClearAllCacheCommand(context: CommandContext): () => Promise<void> {
   return async () => {
     await context.cacheService.clearAll();
-    void vscode.window.showInformationMessage('Cleared all MultiDiff cache.');
+    void vscode.window.showInformationMessage('Cleared all Fukusa cache.');
   };
 }

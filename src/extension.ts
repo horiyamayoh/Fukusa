@@ -104,7 +104,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('multidiff.compatibility.openSnapshotAsTempFile', createOpenSnapshotAsTempFileCommand(commandContext))
   );
 
-  output.info('MultiDiffViewer activated.');
+  output.info('Fukusa activated.');
 }
 
 export function deactivate(): void {

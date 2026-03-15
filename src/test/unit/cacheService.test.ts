@@ -13,7 +13,7 @@ import { OutputLogger } from '../../util/output';
 
 suite('Unit: CacheService', () => {
   test('reloads stale entries when maxAgeMs is exceeded', async () => {
-    const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'multidiff-cache-service-'));
+    const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fukusa-cache-service-'));
     const output = new OutputLogger('CacheService Test');
     const memoryCache = new MemoryCache(1024 * 1024);
     const persistentCache = new PersistentCache(vscode.Uri.file(storageDir));

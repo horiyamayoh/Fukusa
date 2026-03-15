@@ -8,7 +8,7 @@ import { PersistentCache } from '../../infrastructure/cache/persistentCache';
 
 suite('Unit: PersistentCache', () => {
   test('drops invalid index entries during initialization', async () => {
-    const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'multidiff-persistent-cache-'));
+    const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fukusa-persistent-cache-'));
     const cacheDir = path.join(storageDir, 'cache');
     await fs.mkdir(cacheDir, { recursive: true });
     await fs.writeFile(path.join(cacheDir, 'index.json'), JSON.stringify({

@@ -1,6 +1,6 @@
 # 変更履歴
 
-このファイルには MultiDiffViewer の主な変更を記録します。
+このファイルには Fukusa の主な変更を記録します。
 
 ## 0.0.1
 
@@ -8,7 +8,7 @@
 
 - `multidiff:` 仮想ファイルシステムによる readonly historical snapshot 表示を追加
 - native diff editor を使った 2 revision 比較を追加
-- adjacent / base モードの MultiDiff session を追加
+- adjacent / base モードの Fukusa session を追加
 - window shift による可視 pair の切り替えを追加
 - blame heatmap の decoration / overview ruler / hover 表示を追加
 - snapshot / history / blame の memory cache / persistent cache を追加

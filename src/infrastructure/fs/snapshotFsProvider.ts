@@ -58,19 +58,19 @@ export class SnapshotFsProvider implements vscode.FileSystemProvider {
   }
 
   public createDirectory(): void {
-    throw vscode.FileSystemError.NoPermissions('MultiDiff snapshots are readonly.');
+    throw vscode.FileSystemError.NoPermissions('Fukusa snapshots are readonly.');
   }
 
   public writeFile(): void {
-    throw vscode.FileSystemError.NoPermissions('MultiDiff snapshots are readonly.');
+    throw vscode.FileSystemError.NoPermissions('Fukusa snapshots are readonly.');
   }
 
   public delete(): void {
-    throw vscode.FileSystemError.NoPermissions('MultiDiff snapshots are readonly.');
+    throw vscode.FileSystemError.NoPermissions('Fukusa snapshots are readonly.');
   }
 
   public rename(): void {
-    throw vscode.FileSystemError.NoPermissions('MultiDiff snapshots are readonly.');
+    throw vscode.FileSystemError.NoPermissions('Fukusa snapshots are readonly.');
   }
 
   private resolveSnapshot(uri: vscode.Uri): {

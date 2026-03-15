@@ -22,7 +22,7 @@ export class NativeDiffSessionController {
   public async shiftWindow(delta: number): Promise<void> {
     const session = this.sessionService.getActiveSession();
     if (!session) {
-      void vscode.window.showInformationMessage('No active MultiDiff session.');
+      void vscode.window.showInformationMessage('No active Fukusa session.');
       return;
     }
 
