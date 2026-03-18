@@ -2,7 +2,7 @@ import { RepoContext } from '../../adapters/common/types';
 
 export interface CacheKeyDescriptor {
   readonly key: string;
-  readonly namespace: 'snapshot' | 'history' | 'blame' | 'diff';
+  readonly namespace: 'snapshot' | 'history' | 'blame' | 'diff' | 'shadowTree' | 'alignment' | 'alignedText';
   readonly repoId: string;
   readonly relativePath: string;
 }
@@ -19,6 +19,18 @@ function buildKey(namespace: CacheKeyDescriptor['namespace'], repo: RepoContext,
     repoId: toRepoCacheId(repo),
     relativePath: normalizedPath
   };
+}
+
+export function createShadowTreeCacheKey(repo: RepoContext, revision: string): CacheKeyDescriptor {
+  return buildKey('shadowTree', repo, '.', revision);
+}
+
+export function createAlignmentCacheKey(repo: RepoContext, relativePath: string, revisions: readonly string[]): CacheKeyDescriptor {
+  return buildKey('alignment', repo, relativePath, revisions.join('..'));
+}
+
+export function createAlignedTextCacheKey(repo: RepoContext, relativePath: string, revision: string, sessionId: string): CacheKeyDescriptor {
+  return buildKey('alignedText', repo, relativePath, `${sessionId}:${revision}`);
 }
 
 export function createSnapshotCacheKey(repo: RepoContext, relativePath: string, revision: string): CacheKeyDescriptor {

@@ -3,7 +3,6 @@ import * as path from 'path';
 
 const patterns = [
   '^Integration: GitAdapter',
-  '^Integration: NativeDiffSessionController',
   '^Integration: SnapshotFsProvider',
   '^Integration: SvnAdapter'
 ];

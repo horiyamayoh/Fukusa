@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 
 export type RepositoryKind = 'git' | 'svn';
-export type SessionMode = 'adjacent' | 'base';
 export type CacheValueKind = 'binary' | 'json';
+export type CompareChangeKind = 'added' | 'removed' | 'modified';
 
 export interface RepoContext {
   readonly kind: RepositoryKind;
@@ -17,6 +17,7 @@ export interface RevisionRef {
   readonly email?: string;
   readonly message?: string;
   readonly timestamp?: number;
+  readonly relativePath?: string;
 }
 
 export interface SnapshotResource {
@@ -33,18 +34,112 @@ export interface DiffPair {
   readonly title: string;
 }
 
-export interface MultiDiffSession {
+export interface IntralineSegment {
+  readonly startCharacter: number;
+  readonly endCharacter: number;
+  readonly kind: 'added' | 'removed';
+}
+
+export interface AlignedLineChange {
+  readonly kind: CompareChangeKind;
+  readonly counterpartText?: string;
+  readonly counterpartLineNumber?: number;
+  readonly intralineSegments: readonly IntralineSegment[];
+}
+
+export interface AlignedLine {
+  readonly rowNumber: number;
+  readonly present: boolean;
+  readonly text: string;
+  readonly originalLineNumber?: number;
+  readonly prevChange?: AlignedLineChange;
+  readonly nextChange?: AlignedLineChange;
+  readonly blameAgeBucket?: number;
+}
+
+export interface AlignedLineMap {
+  readonly rowToOriginalLine: ReadonlyMap<number, number>;
+  readonly originalLineToRow: ReadonlyMap<number, number>;
+}
+
+export interface CompareSourceDocument {
+  readonly revisionIndex: number;
+  readonly revisionId: string;
+  readonly revisionLabel: string;
+  readonly relativePath: string;
+  readonly snapshotUri: vscode.Uri;
+  readonly rawUri: vscode.Uri;
+  readonly text: string;
+  readonly blameLines?: readonly BlameLineInfo[];
+}
+
+export interface GlobalRowCell extends AlignedLine {
+  readonly revisionIndex: number;
+}
+
+export interface GlobalRow {
+  readonly rowNumber: number;
+  readonly cells: readonly GlobalRowCell[];
+}
+
+export interface AdjacentPairOverlay {
+  readonly leftRevisionIndex: number;
+  readonly rightRevisionIndex: number;
+  readonly key: string;
+  readonly label: string;
+  readonly changedRowNumbers: readonly number[];
+}
+
+export interface RawSnapshot {
+  readonly snapshotUri: vscode.Uri;
+  readonly rawUri: vscode.Uri;
+  readonly revisionIndex: number;
+  readonly revisionId: string;
+  readonly revisionLabel: string;
+  readonly relativePath: string;
+  readonly lineMap: AlignedLineMap;
+}
+
+export interface CompareAlignmentState {
+  readonly rowCount: number;
+  readonly rawSnapshots: readonly RawSnapshot[];
+  readonly globalRows: readonly GlobalRow[];
+  readonly adjacentPairs: readonly AdjacentPairOverlay[];
+}
+
+export interface VisibleRevisionWindow {
+  readonly startRevisionIndex: number;
+  readonly endRevisionIndex: number;
+  readonly rawSnapshots: readonly RawSnapshot[];
+}
+
+export interface NWayCompareSession {
   readonly id: string;
+  readonly uri: vscode.Uri;
   readonly repo: RepoContext;
   readonly originalUri: vscode.Uri;
   readonly relativePath: string;
   readonly revisions: readonly RevisionRef[];
-  readonly pairs: readonly DiffPair[];
-  readonly mode: SessionMode;
   readonly createdAt: number;
-  visiblePairCount: number;
-  visibleStartPairIndex: number;
+  readonly rowCount: number;
+  readonly rawSnapshots: readonly RawSnapshot[];
+  readonly globalRows: readonly GlobalRow[];
+  readonly adjacentPairs: readonly AdjacentPairOverlay[];
+  activeRevisionIndex: number;
+  activePairKey?: string;
+  pageStart: number;
 }
+
+export interface NativeEditorBinding {
+  readonly sessionId: string;
+  readonly revisionIndex: number;
+  readonly revisionId: string;
+  readonly relativePath: string;
+  readonly rawUri: vscode.Uri;
+}
+
+export type CompareSnapshot = RawSnapshot;
+export type SessionFileBinding = NativeEditorBinding;
 
 export interface BlameLineInfo {
   readonly lineNumber: number;
@@ -61,6 +156,19 @@ export interface ParsedSnapshotUri {
   readonly relativePath: string;
   readonly displayRelativePath: string;
   readonly revision: string;
+}
+
+export interface ParsedSessionUri {
+  readonly sessionId: string;
+  readonly relativePath: string;
+}
+
+export interface ParsedSessionDocumentUri {
+  readonly sessionId: string;
+  readonly windowStart: number;
+  readonly revisionIndex: number;
+  readonly relativePath: string;
+  readonly revisionLabel: string;
 }
 
 export interface ResolvedResource {

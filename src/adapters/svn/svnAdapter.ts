@@ -41,4 +41,8 @@ export class SvnAdapter implements IRepositoryAdapter {
   public getDiff(repo: RepoContext, relativePath: string, leftRevision: string, rightRevision: string): Promise<string> {
     return this.svnCli.getDiff(repo.repoRoot, relativePath, leftRevision, rightRevision);
   }
+
+  public materializeRevisionTree(repo: RepoContext, revision: string, targetRoot: string): Promise<void> {
+    return this.svnCli.materializeRevisionTree(repo.repoRoot, revision, targetRoot);
+  }
 }

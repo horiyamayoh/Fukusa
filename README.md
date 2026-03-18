@@ -1,143 +1,52 @@
 # Fukusa
 
-Fukusa は、「複数差分」から取った名前の VS Code 拡張機能です。native editor / native diff editor を使ってファイル履歴を多面的に追い、独自 Webview に閉じず、できるだけ標準エディタの体験を継承したまま、Git / SVN の履歴 snapshot、2点 diff、複数 revision の連続比較、blame heatmap を扱えることを目標にしています。
+Fukusa is a VS Code extension for historical N-way compare. It opens the selected revisions as native VS Code text editors ordered `A | B | C | ...`, keeps the middle revision un-duplicated, and uses alignment metadata only for scroll sync and diff decorations.
 
-![Pair diff session](media/session-overview.png)
+## What Changed
 
-## 何ができるか
+- The main compare surface is back to native editors, so syntax highlight, definition jump, hover, font, theme, cursor, and selection all stay in VS Code's standard editor surface.
+- Two revisions and N revisions use the same native-editor session model.
+- `Open Active Session Pair Diff` remains available as a native `vscode.diff` escape hatch for the focused adjacent pair.
+- Historical raw files are materialized under repo-local shadow storage:
+  - Git: `<repo>/.fukusa-shadow/`
+  - SVN: `<repo>/.fukusa-shadow/`
 
-通常の diff は「比較したい 2 点」が分かっているときには十分ですが、履歴調査や設計変更の追跡では「どの revision 同士を見ればよいか」がまだ分からないことが多いです。Fukusa はその前段を補うためのツールです。
+## Main Commands
 
-- 任意 revision のファイルを readonly snapshot として開く
-- 2 revision を native diff editor で比較する
-- 3 つ以上の revision を adjacent / base モードで横並び表示する
-- 表示中の比較 window を左右にシフトする
-- blame に基づく行単位の age heatmap を重ねる
-- snapshot / history / blame をキャッシュして再表示を速くする
-- language feature の相性問題がある場合は temp file fallback に切り替える
-
-## 対応リポジトリ
-
-- Git
-  - VS Code 組み込み Git API を優先
-  - 必要に応じて Git CLI に fallback
-- SVN
-  - SVN CLI ベース
-
-## 主なユースケース
-
-- ある関数が「いつ」「どの差分で」大きく変わったかを追う
-- 連続する複数コミットの差分を一度に眺めたい
-- 現在ファイルではなく historical snapshot 単体を読みたい
-- blame を見ながら古い行・新しい行の偏りを把握したい
-- Git と SVN が混在する環境でも同じ操作感で履歴を見たい
-
-## 主な機能
-
-### 1. Readonly snapshot
-
-履歴上のファイルを `multidiff:` 仮想ファイルシステム経由で開きます。編集はできませんが、通常のテキストエディタとして閲覧できます。
-
-- historical snapshot を単体で確認できる
-- 拡張子ベースで言語モードを解決する
-- 必要に応じて `tempFile` モードへ切り替えられる
-
-![Readonly snapshot](media/snapshot-overview.png)
-
-### 2. Pair diff
-
-2 つの revision を選択して、VS Code 標準の diff editor で比較します。
-
-- inline / side-by-side は VS Code 標準機能を利用
-- Command Palette と Explorer 右クリックの両方から起動可能
-
-### 3. Fukusa session
-
-複数 revision を選んで、複数ペアを同時に開きます。
-
-- `Adjacent`: `A-B`, `B-C`, `C-D` のように隣接比較
-- `Base`: `A-B`, `A-C`, `A-D` のように先頭固定比較
-- 表示しきれない分は window shift で切り替え
-
-### 4. Blame heatmap
-
-blame の日時を age bucket に分けて、行背景色・overview ruler・hover に反映します。
-
-- 現在ファイルでも historical snapshot でも利用可能
-- author / revision / date / summary を hover で表示
-
-### 5. Cache / compatibility
-
-- snapshot / history / blame を memory + persistent cache で保持
-- `multidiff:` scheme で language feature が弱い場合は temp file fallback を利用可能
-
-## コマンド一覧
-
-| コマンド | 説明 |
+| Command | Description |
 | --- | --- |
-| `Fukusa: Open for Current File` | 現在ファイルに対して 2 revision を選び、native diff を開きます。 |
-| `Fukusa: Open for This File` | Explorer 上のファイルに対して同様の diff を開きます。 |
-| `Fukusa: Open Revision Snapshot` | 1 revision を選んで readonly snapshot を開きます。 |
-| `Fukusa: Open Session (Adjacent)` | 隣接ペアで Fukusa session を開きます。 |
-| `Fukusa: Open Session (Base)` | 先頭固定ペアで Fukusa session を開きます。 |
-| `Fukusa: Shift Window Left` | 表示中 session の window を左へずらします。 |
-| `Fukusa: Shift Window Right` | 表示中 session の window を右へずらします。 |
-| `Fukusa: Toggle Blame Heatmap` | blame heatmap を ON/OFF します。 |
-| `Fukusa: Warm Cache for Current File` | 現在ファイルの最近の revision を先読みします。 |
-| `Fukusa: Clear Cache for Current Repository` | 現在リポジトリのキャッシュを消します。 |
-| `Fukusa: Clear All Cache` | すべてのキャッシュを消します。 |
-| `Fukusa: Open Snapshot as Temp File` | snapshot を `file:` ベースの temp file として開きます。 |
+| `Fukusa: Browse Revisions` | Pick 2 or more revisions for the current file or an Explorer file and open a native-editor N-way compare session. |
+| `Fukusa: Open Active Session Snapshot` | Open the raw historical file for the focused revision. |
+| `Fukusa: Open Active Session Pair Diff` | Open a native two-way diff for the focused adjacent pair. |
+| `Fukusa: Shift Window Left` | Shift the visible 9-column window left when a session has more than 9 revisions. |
+| `Fukusa: Shift Window Right` | Shift the visible 9-column window right when a session has more than 9 revisions. |
+| `Fukusa: Toggle Blame Heatmap` | Toggle line-age heatmap decorations. |
+| `Fukusa: Warm Cache for Current File` | Preload recent snapshot history for the current file. |
+| `Fukusa: Clear Cache for Current Repository` | Clear cache entries for the current repository. |
+| `Fukusa: Clear All Cache` | Clear all Fukusa caches. |
 
-## 設定一覧
+## Settings
 
-| 設定 | 説明 |
+| Setting | Description |
 | --- | --- |
-| `multidiff.native.visiblePairCount` | 一度に表示する diff pair 数 |
-| `multidiff.native.maxVisiblePairCount` | visible pair 数の上限 |
-| `multidiff.blame.mode` | blame 表示モード |
-| `multidiff.blame.showOverviewRuler` | overview ruler への色表示 |
-| `multidiff.cache.maxSizeMb` | メモリキャッシュ上限 |
-| `multidiff.snapshot.openMode` | `virtual` / `tempFile` の切り替え |
-| `multidiff.compatibility.definitionFallback` | compatibility fallback の方針 |
+| `multidiff.blame.mode` | Blame heatmap mode. |
+| `multidiff.blame.showOverviewRuler` | Show heatmap colors in the overview ruler. |
+| `multidiff.cache.maxSizeMb` | Maximum in-memory cache size. |
 
-## 使い始め方
+## Behavior Notes
 
-1. Git または SVN の working copy 内にあるファイルを開きます。
-2. `Fukusa: Open for Current File` で 2 revision 比較を試します。
-3. より長い履歴を見たい場合は `Fukusa: Open Session (Adjacent)` または `Fukusa: Open Session (Base)` を使います。
-4. 行の鮮度を見たい場合は `Fukusa: Toggle Blame Heatmap` を実行します。
-5. language server の都合で定義ジャンプなどが弱い場合は `multidiff.snapshot.openMode` を `tempFile` に切り替えます。
+- Revision selection is normalized to oldest-to-newest before the session is built.
+- Initial alignment is line-based. Intraline changes are tracked for modified rows.
+- Scroll sync follows aligned logical rows across the visible native editors.
+- Raw historical files live in the shadow workspace and are opened directly as `file` scheme documents.
 
-## 動作上の前提
-
-- Git 利用時は通常、Git CLI が利用可能であることを想定しています。
-- SVN 利用時は `svn` CLI が必要です。
-- readonly snapshot は `multidiff:` scheme で開くため、language extension によっては `file:` より機能が弱い場合があります。
-
-## 既知の制約
-
-- Definition / Hover / References の bridge provider は現状 skeleton です。実用的な fallback は temp file モードです。
-- 大量の revision を一度に開く場合、VS Code の editor group 数と windowing 制約を受けます。
-- binary diff や merge conflict 専用 UI は未対応です。
-- すべての language extension が `multidiff:` 上で完全に動くことは保証していません。
-
-## 開発と検証
-
-現時点のローカル品質チェック:
-
-- TypeScript compile
-- ESLint
-- unit test
-- integration test
-- VSIX package 作成
-
-代表コマンド:
+## Development
 
 ```powershell
 npm run compile
-npm run lint
 npm test
+npm run lint
 npx vsce package --pre-release
 ```
 
-公開手順は [PUBLISHING.md](PUBLISHING.md) を参照してください。
+`npm run compile` clears `out/` first so stale generated tests do not survive refactors.

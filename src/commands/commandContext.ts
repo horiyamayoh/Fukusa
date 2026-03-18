@@ -1,11 +1,12 @@
 import { BlameDecorationController } from '../presentation/decorations/blameDecorationController';
-import { NativeDiffSessionController } from '../presentation/native/nativeDiffSessionController';
 import { CacheService } from '../application/cacheService';
 import { LanguageFeatureCompatibilityService } from '../application/languageFeatureCompatibilityService';
 import { RepositoryService } from '../application/repositoryService';
 import { RevisionPickerService } from '../application/revisionPickerService';
+import { SessionBuilderService } from '../application/sessionBuilderService';
 import { SessionService } from '../application/sessionService';
 import { UriFactory } from '../infrastructure/fs/uriFactory';
+import { NativeCompareSessionController } from '../presentation/native/nativeCompareSessionController';
 import { OutputLogger } from '../util/output';
 
 export interface CommandContext {
@@ -14,8 +15,9 @@ export interface CommandContext {
   readonly revisionPickerService: RevisionPickerService;
   readonly uriFactory: UriFactory;
   readonly compatibilityService: LanguageFeatureCompatibilityService;
+  readonly sessionBuilderService: SessionBuilderService;
   readonly sessionService: SessionService;
-  readonly nativeDiffSessionController: NativeDiffSessionController;
+  readonly nativeCompareSessionController: NativeCompareSessionController;
   readonly cacheService: CacheService;
   readonly blameDecorationController: BlameDecorationController;
 }

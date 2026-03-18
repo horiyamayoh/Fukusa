@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-import { ParsedSnapshotUri, RepoContext, RepositoryKind } from '../../adapters/common/types';
+import { ParsedSessionDocumentUri, ParsedSessionUri, ParsedSnapshotUri, RepoContext, RepositoryKind } from '../../adapters/common/types';
 import { RepositoryRegistry } from '../../application/repositoryRegistry';
 
 function toDisplayPath(relativePath: string, revision: string): string {
@@ -78,6 +78,77 @@ export class UriFactory {
       relativePath,
       displayRelativePath,
       revision
+    };
+  }
+
+  public createSessionUri(sessionId: string, relativePath: string): vscode.Uri {
+    const normalizedRelativePath = normalizeRelativeSnapshotPath(relativePath.split(path.sep).join(path.posix.sep));
+    const query = new URLSearchParams({
+      path: normalizedRelativePath
+    });
+
+    return vscode.Uri.from({
+      scheme: 'multidiff-session',
+      authority: sessionId,
+      path: `/${normalizedRelativePath}`,
+      query: query.toString()
+    });
+  }
+
+  public parseSessionUri(uri: vscode.Uri): ParsedSessionUri {
+    if (uri.scheme !== 'multidiff-session') {
+      throw new Error(`Unsupported session URI scheme: ${uri.toString()}`);
+    }
+
+    return {
+      sessionId: uri.authority,
+      relativePath: normalizeRelativeSnapshotPath(new URLSearchParams(uri.query).get('path') ?? uri.path)
+    };
+  }
+
+  public createSessionDocumentUri(
+    sessionId: string,
+    windowStart: number,
+    revisionIndex: number,
+    relativePath: string,
+    revisionLabel: string
+  ): vscode.Uri {
+    const normalizedRelativePath = normalizeRelativeSnapshotPath(relativePath.split(path.sep).join(path.posix.sep));
+    const fileName = path.posix.basename(normalizedRelativePath);
+    const query = new URLSearchParams({
+      path: normalizedRelativePath,
+      windowStart: String(windowStart),
+      revisionIndex: String(revisionIndex),
+      revisionLabel
+    });
+
+    return vscode.Uri.from({
+      scheme: 'multidiff-session-doc',
+      authority: sessionId,
+      path: `/${revisionIndex.toString().padStart(2, '0')}-${fileName}`,
+      query: query.toString()
+    });
+  }
+
+  public parseSessionDocumentUri(uri: vscode.Uri): ParsedSessionDocumentUri {
+    if (uri.scheme !== 'multidiff-session-doc') {
+      throw new Error(`Unsupported session document URI scheme: ${uri.toString()}`);
+    }
+
+    const query = new URLSearchParams(uri.query);
+    const windowStart = Number(query.get('windowStart') ?? '');
+    const revisionIndex = Number(query.get('revisionIndex') ?? '');
+    const revisionLabel = query.get('revisionLabel') ?? '';
+    if (!Number.isFinite(windowStart) || !Number.isFinite(revisionIndex)) {
+      throw new Error(`Malformed session document URI query: ${uri.toString()}`);
+    }
+
+    return {
+      sessionId: uri.authority,
+      windowStart,
+      revisionIndex,
+      relativePath: normalizeRelativeSnapshotPath(query.get('path') ?? uri.path),
+      revisionLabel
     };
   }
 }

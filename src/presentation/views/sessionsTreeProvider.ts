@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 
-import { DiffPair, MultiDiffSession } from '../../adapters/common/types';
+import { NWayCompareSession, RawSnapshot } from '../../adapters/common/types';
 import { SessionService } from '../../application/sessionService';
 
-type SessionTreeElement = MultiDiffSession | DiffPair;
+type SessionTreeElement = NWayCompareSession | RawSnapshot;
 
 export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionTreeElement> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<SessionTreeElement | undefined | null | void>();
@@ -21,17 +21,23 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionTree
   public getTreeItem(element: SessionTreeElement): vscode.TreeItem {
     if (isSession(element)) {
       const item = new vscode.TreeItem(pathLabel(element.relativePath), vscode.TreeItemCollapsibleState.Expanded);
-      item.description = `${element.mode} | ${element.visibleStartPairIndex + 1}-${Math.min(element.pairs.length, element.visibleStartPairIndex + element.visiblePairCount)} / ${element.pairs.length}`;
+      item.description = `${element.rawSnapshots.length} revisions / ${element.rowCount} rows`;
       item.tooltip = `${element.repo.kind} ${element.repo.repoRoot}`;
+      item.command = {
+        command: 'multidiff.internal.revealSession',
+        title: 'Reveal Compare Session',
+        arguments: [element.id]
+      };
       return item;
     }
 
-    const item = new vscode.TreeItem(element.title, vscode.TreeItemCollapsibleState.None);
+    const item = new vscode.TreeItem(`${element.revisionLabel} | ${element.relativePath}`, vscode.TreeItemCollapsibleState.None);
     item.command = {
-      command: 'vscode.diff',
-      title: 'Open Diff',
-      arguments: [element.left.uri, element.right.uri, element.title, { preview: true }]
+      command: 'vscode.open',
+      title: 'Open Snapshot',
+      arguments: [element.rawUri, { preview: false }]
     };
+    item.description = element.revisionId.slice(0, 12);
     return item;
   }
 
@@ -40,12 +46,12 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionTree
       return [...this.sessionService.listSessions()];
     }
 
-    return isSession(element) ? [...element.pairs] : [];
+    return isSession(element) ? [...element.rawSnapshots] : [];
   }
 }
 
-function isSession(element: SessionTreeElement): element is MultiDiffSession {
-  return 'pairs' in element;
+function isSession(element: SessionTreeElement): element is NWayCompareSession {
+  return 'state' in element;
 }
 
 function pathLabel(relativePath: string): string {

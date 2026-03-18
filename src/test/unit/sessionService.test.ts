@@ -1,9 +1,9 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 
-import { RepoContext, RevisionRef } from '../../adapters/common/types';
+import { NWayCompareSession, RepoContext, RevisionRef } from '../../adapters/common/types';
 import { RepositoryRegistry } from '../../application/repositoryRegistry';
-import { SessionService } from '../../application/sessionService';
+import { MAX_VISIBLE_REVISIONS, SessionService } from '../../application/sessionService';
 import { UriFactory } from '../../infrastructure/fs/uriFactory';
 
 suite('Unit: SessionService', () => {
@@ -12,53 +12,125 @@ suite('Unit: SessionService', () => {
     repoRoot: 'c:/repo',
     repoId: 'repo123'
   };
-  const revisions: RevisionRef[] = [
-    { id: 'a1', shortLabel: 'a1' },
-    { id: 'b2', shortLabel: 'b2' },
-    { id: 'c3', shortLabel: 'c3' },
-    { id: 'd4', shortLabel: 'd4' }
-  ];
 
-  test('builds adjacent pairs', () => {
-    const service = new SessionService(new UriFactory(new RepositoryRegistry()));
-    const pairs = service.buildPairs(repo, 'src/sample.ts', revisions, 'adjacent');
+  test('derives the active pair from the focused revision inside the visible window', () => {
+    const service = new SessionService();
+    const session = service.createBrowserSession(createSession('session-1', createRevisions(4)));
 
-    assert.strictEqual(pairs.length, 3);
-    assert.strictEqual(pairs[0].left.revision, 'a1');
-    assert.strictEqual(pairs[0].right.revision, 'b2');
-    assert.strictEqual(pairs[2].left.revision, 'c3');
-    assert.strictEqual(pairs[2].right.revision, 'd4');
+    service.setActiveRevision(session.id, 2);
+
+    assert.strictEqual(service.getActivePair(session)?.key, '2:3');
   });
 
-  test('builds base pairs', () => {
-    const service = new SessionService(new UriFactory(new RepositoryRegistry()));
-    const pairs = service.buildPairs(repo, 'src/sample.ts', revisions, 'base');
+  test('falls back to the left pair when the focused revision is the last visible column', () => {
+    const service = new SessionService();
+    const session = service.createBrowserSession(createSession('session-2', createRevisions(4)));
 
-    assert.strictEqual(pairs.length, 3);
-    assert.strictEqual(pairs[0].left.revision, 'a1');
-    assert.strictEqual(pairs[2].right.revision, 'd4');
+    service.setActiveRevision(session.id, 3);
+
+    assert.strictEqual(service.getActivePair(session)?.key, '2:3');
   });
 
-  test('shifts visible window within bounds', () => {
-    const service = new SessionService(new UriFactory(new RepositoryRegistry()));
-    const session = service.createSession(repo, vscode.Uri.file('c:/repo/src/sample.ts'), 'src/sample.ts', revisions, 'adjacent', 2);
+  test('updates active revision from a raw snapshot uri binding', () => {
+    const service = new SessionService();
+    const session = service.createBrowserSession(createSession('session-3', createRevisions(4)));
 
-    service.shiftWindow(session.id, 1);
-    assert.strictEqual(session.visibleStartPairIndex, 1);
+    service.updateFocusFromUri(session.rawSnapshots[2].rawUri);
 
-    service.shiftWindow(session.id, 10);
-    assert.strictEqual(session.visibleStartPairIndex, 1);
+    assert.strictEqual(service.getActiveSnapshot(session)?.revisionIndex, 2);
+  });
+
+  test('keeps revision selection in bounds', () => {
+    const service = new SessionService();
+    const session = service.createBrowserSession(createSession('session-4', createRevisions(4)));
+
+    service.setActiveRevision(session.id, 99);
+
+    assert.strictEqual(service.getActiveSnapshot(session)?.revisionIndex, 3);
+    assert.strictEqual(service.getActivePair(session)?.key, '2:3');
+  });
+
+  test('shifts the visible window and clamps the active revision into the new page', () => {
+    const service = new SessionService();
+    const session = service.createBrowserSession(createSession('session-5', createRevisions(11)));
+
+    service.setActiveRevision(session.id, 8);
+    const shifted = service.shiftWindow(session.id, 1, MAX_VISIBLE_REVISIONS);
+
+    assert.ok(shifted);
+    assert.strictEqual(session.pageStart, 1);
+    assert.strictEqual(service.getVisibleWindow(session).startRevisionIndex, 1);
+    assert.strictEqual(session.activeRevisionIndex, 8);
+
+    service.shiftWindow(session.id, 2, MAX_VISIBLE_REVISIONS);
+    assert.strictEqual(session.pageStart, 2);
+    assert.strictEqual(session.activeRevisionIndex, 8);
   });
 
   test('evicts the oldest session when the limit is reached', () => {
-    const service = new SessionService(new UriFactory(new RepositoryRegistry()), 2);
-    const first = service.createSession(repo, vscode.Uri.file('c:/repo/src/one.ts'), 'src/one.ts', revisions, 'adjacent', 2);
-    const second = service.createSession(repo, vscode.Uri.file('c:/repo/src/two.ts'), 'src/two.ts', revisions, 'adjacent', 2);
-    const third = service.createSession(repo, vscode.Uri.file('c:/repo/src/three.ts'), 'src/three.ts', revisions, 'adjacent', 2);
+    const service = new SessionService(2);
+    const first = service.createBrowserSession(createSession('session-a', createRevisions(2)));
+    const second = service.createBrowserSession(createSession('session-b', createRevisions(2)));
+    const third = service.createBrowserSession(createSession('session-c', createRevisions(2)));
 
     assert.strictEqual(service.getSession(first.id), undefined);
     assert.ok(service.getSession(second.id));
     assert.ok(service.getSession(third.id));
     assert.strictEqual(service.listSessions().length, 2);
   });
+
+  function createSession(sessionId: string, revisions: readonly RevisionRef[]): NWayCompareSession {
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    return {
+      id: sessionId,
+      uri: uriFactory.createSessionUri(sessionId, 'src/sample.ts'),
+      repo,
+      originalUri: vscode.Uri.file('c:/repo/src/sample.ts'),
+      relativePath: 'src/sample.ts',
+      revisions,
+      createdAt: Date.now(),
+      rowCount: 1,
+      rawSnapshots: revisions.map((revision, index) => ({
+        snapshotUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
+        rawUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
+        revisionIndex: index,
+        revisionId: revision.id,
+        revisionLabel: revision.shortLabel,
+        relativePath: 'src/sample.ts',
+        lineMap: {
+          rowToOriginalLine: new Map([[1, 1]]),
+          originalLineToRow: new Map([[1, 1]])
+        }
+      })),
+      globalRows: [
+        {
+          rowNumber: 1,
+          cells: revisions.map((revision, index) => ({
+            revisionIndex: index,
+            rowNumber: 1,
+            present: true,
+            text: revision.id,
+            originalLineNumber: 1
+          }))
+        }
+      ],
+      adjacentPairs: revisions.slice(0, -1).map((revision, index) => ({
+        key: `${index}:${index + 1}`,
+        leftRevisionIndex: index,
+        rightRevisionIndex: index + 1,
+        label: `${revision.shortLabel}-${revisions[index + 1].shortLabel}`,
+        changedRowNumbers: [1]
+      })),
+      activeRevisionIndex: 0,
+      activePairKey: '0:1',
+      pageStart: 0
+    };
+  }
+
+  function createRevisions(count: number): RevisionRef[] {
+    return Array.from({ length: count }, (_, index) => ({
+      id: `rev-${index}`,
+      shortLabel: `r${index}`
+    }));
+  }
 });

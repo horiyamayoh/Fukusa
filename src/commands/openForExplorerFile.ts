@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 import { CommandContext } from './commandContext';
-import { openPairDiff, resolveTargetResource } from './shared';
+import { openDiffSelection, resolveTargetResource } from './shared';
 
 export function createOpenForExplorerFileCommand(context: CommandContext): (uri?: vscode.Uri) => Promise<void> {
   return async (uri?: vscode.Uri) => {
@@ -10,6 +10,6 @@ export function createOpenForExplorerFileCommand(context: CommandContext): (uri?
       return;
     }
 
-    await openPairDiff(context, resource);
+    await openDiffSelection(context, resource);
   };
 }

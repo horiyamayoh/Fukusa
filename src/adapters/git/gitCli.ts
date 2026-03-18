@@ -1,3 +1,4 @@
+import * as fs from 'fs/promises';
 import * as path from 'path';
 
 import { BlameLineInfo, RevisionRef } from '../common/types';
@@ -153,5 +154,19 @@ export class GitCli {
       normalizeGitPath(relativePath)
     ]);
     return stdout.toString('utf8');
+  }
+
+  public async materializeRevisionTree(repoRoot: string, revision: string, targetRoot: string): Promise<void> {
+    assertValidGitRevision(revision);
+    await fs.mkdir(targetRoot, { recursive: true });
+    const { stdout } = await execFileBuffered('git', ['-C', repoRoot, 'ls-tree', '-r', '-z', '--name-only', revision]);
+    const entries = stdout.toString('utf8').split('\u0000').filter(Boolean);
+
+    await Promise.all(entries.map(async (entry) => {
+      const { stdout: fileBytes } = await execFileBuffered('git', ['-C', repoRoot, 'show', `${revision}:${entry}`]);
+      const outputPath = path.join(targetRoot, ...entry.split('/'));
+      await fs.mkdir(path.dirname(outputPath), { recursive: true });
+      await fs.writeFile(outputPath, fileBytes);
+    }));
   }
 }

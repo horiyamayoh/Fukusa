@@ -8,6 +8,6 @@ export function createOpenSessionBaseCommand(context: CommandContext): () => Pro
       return;
     }
 
-    await openSession(context, resource, 'base');
+    await openSession(context, resource);
   };
 }

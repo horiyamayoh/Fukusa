@@ -37,4 +37,13 @@ suite('Unit: UriFactory', () => {
 
     assert.throws(() => uriFactory.parseSnapshotUri(uri), /Invalid snapshot relative path/);
   });
+
+  test('round-trips session URIs', () => {
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    const uri = uriFactory.createSessionUri('session-1', 'src/sample.ts');
+    const parsed = uriFactory.parseSessionUri(uri);
+
+    assert.strictEqual(parsed.sessionId, 'session-1');
+    assert.strictEqual(parsed.relativePath, 'src/sample.ts');
+  });
 });

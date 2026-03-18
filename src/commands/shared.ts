@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
-import { ResolvedResource, SessionMode } from '../adapters/common/types';
-import { toRepoCacheId, createSnapshotCacheKey } from '../infrastructure/cache/cacheKeys';
+import { ResolvedResource, RevisionRef } from '../adapters/common/types';
+import { createSnapshotCacheKey, toRepoCacheId } from '../infrastructure/cache/cacheKeys';
 import { CommandContext } from './commandContext';
 
 export async function resolveTargetResource(
@@ -24,6 +24,27 @@ export async function resolveTargetResource(
   return resource;
 }
 
+export async function browseAndOpenRevisions(context: CommandContext, resource: ResolvedResource): Promise<void> {
+  const revisions = await context.revisionPickerService.pickMultipleRevisions(resource, {
+    minSelection: 2,
+    placeHolder: 'Choose 2 or more revisions for an N-way compare session.'
+  });
+  if (!revisions) {
+    return;
+  }
+
+  try {
+    await openCompareSessionWithRevisions(context, resource, revisions);
+  } catch (error) {
+    context.output.error('Failed to open N-way compare session.', error);
+    void vscode.window.showErrorMessage(`Failed to open Fukusa compare: ${toErrorMessage(error)}`);
+  }
+}
+
+export async function openDiffSelection(context: CommandContext, resource: ResolvedResource): Promise<void> {
+  await browseAndOpenRevisions(context, resource);
+}
+
 export async function openPairDiff(context: CommandContext, resource: ResolvedResource): Promise<void> {
   const revisions = await context.revisionPickerService.pickMultipleRevisions(resource, {
     minSelection: 2,
@@ -38,17 +59,7 @@ export async function openPairDiff(context: CommandContext, resource: ResolvedRe
     return;
   }
 
-  const leftUri = await context.compatibilityService.resolveSnapshotUri(
-    context.uriFactory.createSnapshotUri(resource.repo, resource.relativePath, revisions[0].id)
-  );
-  const rightUri = await context.compatibilityService.resolveSnapshotUri(
-    context.uriFactory.createSnapshotUri(resource.repo, resource.relativePath, revisions[1].id)
-  );
-
-  await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, diffTitle(resource.relativePath, revisions[0].id, revisions[1].id), {
-    viewColumn: vscode.ViewColumn.Active,
-    preview: false
-  });
+  await openCompareSessionWithRevisions(context, resource, revisions);
 }
 
 export async function openSingleSnapshot(context: CommandContext, resource: ResolvedResource): Promise<void> {
@@ -57,30 +68,23 @@ export async function openSingleSnapshot(context: CommandContext, resource: Reso
     return;
   }
 
-  const uri = context.uriFactory.createSnapshotUri(resource.repo, resource.relativePath, revision.id);
-  const openUri = await context.compatibilityService.resolveSnapshotUri(uri);
-  const document = await vscode.workspace.openTextDocument(openUri);
-  await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.Active });
+  const session = await context.sessionBuilderService.createSession(resource, [revision]);
+  const snapshot = session.rawSnapshots[0];
+  const textDocument = await vscode.workspace.openTextDocument(snapshot.rawUri);
+  await vscode.window.showTextDocument(textDocument, { preview: false, viewColumn: vscode.ViewColumn.Active });
 }
 
-export async function openSession(context: CommandContext, resource: ResolvedResource, mode: SessionMode): Promise<void> {
-  const revisions = await context.revisionPickerService.pickMultipleRevisions(resource, {
-    minSelection: 3,
-    placeHolder: `Choose 3 or more revisions for ${mode} mode.`
-  });
-  if (!revisions) {
-    return;
-  }
+export async function openSession(context: CommandContext, resource: ResolvedResource): Promise<void> {
+  await browseAndOpenRevisions(context, resource);
+}
 
-  const session = context.sessionService.createSession(
-    resource.repo,
-    resource.originalUri,
-    resource.relativePath,
-    revisions,
-    mode,
-    getVisiblePairCount()
-  );
-  await context.nativeDiffSessionController.openSession(session);
+async function openCompareSessionWithRevisions(
+  context: CommandContext,
+  resource: ResolvedResource,
+  revisions: readonly RevisionRef[]
+): Promise<void> {
+  const session = await context.sessionBuilderService.createSession(resource, revisions);
+  await context.nativeCompareSessionController.openSession(session);
 }
 
 export async function warmSnapshots(context: CommandContext, resource: ResolvedResource, count = 10): Promise<void> {
@@ -94,18 +98,10 @@ export async function warmSnapshots(context: CommandContext, resource: ResolvedR
   }));
 }
 
-export function getVisiblePairCount(): number {
-  const configuration = vscode.workspace.getConfiguration('multidiff.native');
-  const configured = configuration.get<number>('visiblePairCount', 3);
-  const max = configuration.get<number>('maxVisiblePairCount', 6);
-  return Math.max(1, Math.min(configured, max));
-}
-
 export function getRepoCacheId(resource: ResolvedResource): string {
   return toRepoCacheId(resource.repo);
 }
 
-function diffTitle(relativePath: string, leftRevision: string, rightRevision: string): string {
-  const fileName = relativePath.split('/').at(-1) ?? relativePath;
-  return `${fileName} ${leftRevision.slice(0, 8)} ↔ ${rightRevision.slice(0, 8)}`;
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

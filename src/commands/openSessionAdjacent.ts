@@ -8,6 +8,6 @@ export function createOpenSessionAdjacentCommand(context: CommandContext): () =>
       return;
     }
 
-    await openSession(context, resource, 'adjacent');
+    await openSession(context, resource);
   };
 }

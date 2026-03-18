@@ -15,4 +15,5 @@ export interface IRepositoryAdapter {
   getSnapshot(repo: RepoContext, relativePath: string, revision: string): Promise<Uint8Array>;
   getBlame(repo: RepoContext, relativePath: string, revision?: string): Promise<BlameLineInfo[]>;
   getDiff(repo: RepoContext, relativePath: string, leftRevision: string, rightRevision: string): Promise<string>;
+  materializeRevisionTree(repo: RepoContext, revision: string, targetRoot: string): Promise<void>;
 }

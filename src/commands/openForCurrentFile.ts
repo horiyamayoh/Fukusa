@@ -1,5 +1,5 @@
 import { CommandContext } from './commandContext';
-import { openPairDiff, resolveTargetResource } from './shared';
+import { openDiffSelection, resolveTargetResource } from './shared';
 
 export function createOpenForCurrentFileCommand(context: CommandContext): () => Promise<void> {
   return async () => {
@@ -8,6 +8,6 @@ export function createOpenForCurrentFileCommand(context: CommandContext): () => 
       return;
     }
 
-    await openPairDiff(context, resource);
+    await openDiffSelection(context, resource);
   };
 }

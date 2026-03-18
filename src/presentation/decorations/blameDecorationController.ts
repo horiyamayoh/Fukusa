@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import { BlameHeatmapLine, BlameService } from '../../application/blameService';
+import { SessionService } from '../../application/sessionService';
 import { OutputLogger } from '../../util/output';
 
 const darkPalette = ['rgba(40,167,69,0.18)', 'rgba(155,200,83,0.18)', 'rgba(255,193,7,0.18)', 'rgba(255,128,0,0.18)', 'rgba(220,53,69,0.22)'];
@@ -12,7 +13,11 @@ export class BlameDecorationController implements vscode.Disposable {
   private readonly types: vscode.TextEditorDecorationType[] = [];
   private readonly disposables: vscode.Disposable[] = [];
 
-  public constructor(private readonly blameService: BlameService, private readonly output: OutputLogger) {
+  public constructor(
+    private readonly blameService: BlameService,
+    private readonly sessionService: SessionService,
+    private readonly output: OutputLogger
+  ) {
     this.disposables.push(
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (this.enabled) {
@@ -60,7 +65,7 @@ export class BlameDecorationController implements vscode.Disposable {
       return;
     }
 
-    const heatmap = await this.blameService.getHeatmap(editor.document.uri);
+    const heatmap = this.getSessionHeatmap(editor) ?? await this.blameService.getHeatmap(editor.document.uri);
     if (!heatmap) {
       this.clear(editor);
       return;
@@ -116,6 +121,37 @@ export class BlameDecorationController implements vscode.Disposable {
     return {
       range,
       hoverMessage: hover
+    };
+  }
+
+  private getSessionHeatmap(editor: vscode.TextEditor): { readonly lines: readonly BlameHeatmapLine[] } | undefined {
+    const binding = this.sessionService.getSessionFileBinding(editor.document.uri);
+    if (!binding) {
+      return undefined;
+    }
+
+    const session = this.sessionService.getBrowserSession(binding.sessionId);
+    if (!session) {
+      return undefined;
+    }
+
+    const snapshot = session.rawSnapshots[binding.revisionIndex];
+    return {
+      lines: session.globalRows.flatMap((row) => {
+        const cell = row.cells[binding.revisionIndex];
+        if (cell.blameAgeBucket === undefined || cell.originalLineNumber === undefined) {
+          return [];
+        }
+
+        return {
+          lineNumber: cell.originalLineNumber,
+          ageBucket: cell.blameAgeBucket,
+          revision: snapshot.revisionId,
+          author: snapshot.revisionLabel,
+          summary: snapshot.relativePath,
+          timestamp: undefined
+        };
+      })
     };
   }
 }

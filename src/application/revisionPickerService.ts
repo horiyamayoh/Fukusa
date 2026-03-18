@@ -9,6 +9,16 @@ interface RevisionQuickPickItem extends vscode.QuickPickItem {
   readonly revision: RevisionRef;
 }
 
+export function applySelectionOrder(previousOrder: readonly string[], selectedIds: readonly string[]): string[] {
+  const retained = previousOrder.filter((id) => selectedIds.includes(id));
+  for (const id of selectedIds) {
+    if (!retained.includes(id)) {
+      retained.push(id);
+    }
+  }
+  return retained;
+}
+
 export class RevisionPickerService {
   public constructor(
     private readonly repositoryService: RepositoryService,
@@ -49,7 +59,14 @@ export class RevisionPickerService {
       return undefined;
     }
 
-    return picked.map((item) => item.revision);
+    const selected = picked.map((item) => item.revision);
+    return [...selected].sort((left, right) => {
+      if (typeof left.timestamp === 'number' && typeof right.timestamp === 'number' && left.timestamp !== right.timestamp) {
+        return left.timestamp - right.timestamp;
+      }
+
+      return items.findIndex((item) => item.revision.id === right.id) - items.findIndex((item) => item.revision.id === left.id);
+    });
   }
 
   private async getItems(resource: ResolvedResource, limit: number): Promise<RevisionQuickPickItem[]> {

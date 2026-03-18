@@ -39,6 +39,10 @@ suite('Integration: SnapshotFsProvider', () => {
     public async getDiff(): Promise<string> {
       return '';
     }
+
+    public async materializeRevisionTree(): Promise<void> {
+      return undefined;
+    }
   }
 
   test('reads snapshots through adapter and cache layers', async () => {

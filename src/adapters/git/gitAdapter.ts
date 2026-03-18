@@ -46,4 +46,8 @@ export class GitAdapter implements IRepositoryAdapter {
   public getDiff(repo: RepoContext, relativePath: string, leftRevision: string, rightRevision: string): Promise<string> {
     return this.gitCli.getDiff(repo.repoRoot, relativePath, leftRevision, rightRevision);
   }
+
+  public materializeRevisionTree(repo: RepoContext, revision: string, targetRoot: string): Promise<void> {
+    return this.gitCli.materializeRevisionTree(repo.repoRoot, revision, targetRoot);
+  }
 }

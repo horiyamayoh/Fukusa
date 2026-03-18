@@ -1,7 +1,21 @@
+import * as vscode from 'vscode';
+
 import { CommandContext } from './commandContext';
+import { MAX_VISIBLE_REVISIONS } from '../application/sessionService';
 
 export function createShiftWindowRightCommand(context: CommandContext): () => Promise<void> {
   return async () => {
-    await context.nativeDiffSessionController.shiftWindow(1);
+    const session = context.sessionService.getActiveBrowserSession();
+    if (!session) {
+      void vscode.window.showInformationMessage('No active Fukusa session.');
+      return;
+    }
+
+    if (session.rawSnapshots.length <= MAX_VISIBLE_REVISIONS) {
+      void vscode.window.showInformationMessage('Shift Window Right is only available when more than 9 revisions are open.');
+      return;
+    }
+
+    await context.nativeCompareSessionController.shiftWindow(1);
   };
 }

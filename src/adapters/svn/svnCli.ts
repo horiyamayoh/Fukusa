@@ -162,4 +162,9 @@ export class SvnCli {
     const { stdout } = await execFileBuffered('svn', ['diff', '-r', `${leftRevision}:${rightRevision}`, targetPath]);
     return stdout.toString('utf8');
   }
+
+  public async materializeRevisionTree(repoRoot: string, revision: string, targetRoot: string): Promise<void> {
+    assertValidSvnRevision(revision);
+    await execFileBuffered('svn', ['export', '--force', '--quiet', '-r', revision, repoRoot, targetRoot]);
+  }
 }

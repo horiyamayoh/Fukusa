@@ -1,5 +1,16 @@
 # Fukusa 設計書（改訂版ドラフト v0.2 / Native Editor First）
 
+> Implementation update (2026-03-15):
+> 現在の実装は、この文書中の「native diff editor を pair ごとに並べる」案からさらに進めて、
+> **aligned native text editor を N 本並べる N-way compare** に移行しています。
+> 実コード上の主要差分は次のとおりです。
+> - `pair[] + vscode.diff` ではなく `NWayCompareSession + SessionAlignmentService`
+> - `Adjacent / Base` 公開 UI ではなく `Browse Revisions` からの unified compare flow
+> - `multidiff:` snapshot だけでなく repo-local shadow workspace を使った historical raw file 解決
+> - aligned pane 上の definition / hover / references を raw shadow file に委譲して再マップ
+>
+> この v0.2 文書の native-first という原則は維持しつつ、比較単位は pair ではなく pane 群へ置き換わっています。
+
 - 作成日: 2026-03-11
 - 対象: VS Code 拡張機能 **Fukusa**
 - この版の位置づけ:
