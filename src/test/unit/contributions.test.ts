@@ -13,6 +13,7 @@ suite('Unit: package contributions', () => {
     };
 
     assert.ok(commands.some((entry) => entry.command === 'multidiff.browseRevisions'));
+    assert.ok(commands.some((entry) => entry.command === 'multidiff.closeActiveSession'));
     assert.ok(commands.some((entry) => entry.command === 'multidiff.openActiveSessionSnapshot'));
     assert.ok(commands.some((entry) => entry.command === 'multidiff.openActiveSessionPairDiff'));
     assert.ok(!commands.some((entry) => entry.command === 'multidiff.openForCurrentFile'));

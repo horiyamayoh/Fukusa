@@ -37,6 +37,7 @@
   ],
   "activationEvents": [
     "onCommand:multidiff.browseRevisions",
+    "onCommand:multidiff.closeActiveSession",
     "onCommand:multidiff.openActiveSessionSnapshot",
     "onCommand:multidiff.openActiveSessionPairDiff",
     "onCommand:multidiff.shiftWindowLeft",
@@ -55,6 +56,11 @@
       {
         "command": "multidiff.browseRevisions",
         "title": "Fukusa: Browse Revisions",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.closeActiveSession",
+        "title": "Fukusa: Close Active Session",
         "category": "Fukusa"
       },
       {

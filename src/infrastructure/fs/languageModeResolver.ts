@@ -46,12 +46,14 @@ export class LanguageModeResolver implements vscode.Disposable {
   }
 
   public async apply(document: vscode.TextDocument): Promise<void> {
-    if (document.uri.scheme !== 'multidiff' || document.languageId !== 'plaintext') {
+    if (!['multidiff', 'multidiff-session-doc'].includes(document.uri.scheme) || document.languageId !== 'plaintext') {
       return;
     }
 
-    const parsed = this.uriFactory.parseSnapshotUri(document.uri);
-    const extension = path.posix.extname(parsed.relativePath).toLowerCase();
+    const relativePath = document.uri.scheme === 'multidiff'
+      ? this.uriFactory.parseSnapshotUri(document.uri).relativePath
+      : this.uriFactory.parseSessionDocumentUri(document.uri).relativePath;
+    const extension = path.posix.extname(relativePath).toLowerCase();
     const languageId = extensionToLanguage.get(extension);
     if (!languageId) {
       return;

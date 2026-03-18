@@ -17,7 +17,7 @@ function normalizedPathKey(uri: vscode.Uri): string {
 export class SessionService {
   private readonly sessions = new Map<string, NWayCompareSession>();
   private readonly onDidChangeSessionsEmitter = new vscode.EventEmitter<void>();
-  private readonly snapshotBindings = new Map<string, SessionFileBinding>();
+  private readonly fileBindings = new Map<string, SessionFileBinding>();
   private activeSessionId: string | undefined;
   private readonly maxSessions: number;
 
@@ -71,7 +71,7 @@ export class SessionService {
   }
 
   public setActiveBrowserSession(id: string): void {
-    if (!this.sessions.has(id)) {
+    if (!this.sessions.has(id) || this.activeSessionId === id) {
       return;
     }
 
@@ -85,9 +85,7 @@ export class SessionService {
       return;
     }
 
-    for (const snapshot of session.rawSnapshots) {
-      this.snapshotBindings.delete(normalizedPathKey(snapshot.rawUri));
-    }
+    this.removeBindings((binding) => binding.sessionId === id);
 
     this.sessions.delete(id);
     if (this.activeSessionId === id) {
@@ -97,7 +95,7 @@ export class SessionService {
   }
 
   public updateFocusFromUri(uri: vscode.Uri): void {
-    const binding = this.snapshotBindings.get(normalizedPathKey(uri));
+    const binding = this.fileBindings.get(normalizedPathKey(uri));
     if (!binding) {
       return;
     }
@@ -106,7 +104,18 @@ export class SessionService {
   }
 
   public getSessionFileBinding(uri: vscode.Uri): SessionFileBinding | undefined {
-    return this.snapshotBindings.get(normalizedPathKey(uri));
+    return this.fileBindings.get(normalizedPathKey(uri));
+  }
+
+  public replaceVisibleWindowBindings(sessionId: string, bindings: readonly SessionFileBinding[]): void {
+    this.removeBindings((binding) => binding.sessionId === sessionId && binding.lineNumberSpace === 'globalRow');
+    for (const binding of bindings) {
+      this.fileBindings.set(normalizedPathKey(binding.documentUri), binding);
+    }
+  }
+
+  public clearVisibleWindowBindings(sessionId: string): void {
+    this.removeBindings((binding) => binding.sessionId === sessionId && binding.lineNumberSpace === 'globalRow');
   }
 
   public getActivePair(session: NWayCompareSession): AdjacentPairOverlay | undefined {
@@ -169,8 +178,17 @@ export class SessionService {
 
     const maxIndex = Math.max(0, session.rawSnapshots.length - 1);
     const activeRevisionIndex = Math.max(0, Math.min(revisionIndex, maxIndex));
+    const nextPairKey = derivePairKey(session, activeRevisionIndex, this.getVisibleWindow(session));
+    if (
+      session.activeRevisionIndex === activeRevisionIndex
+      && session.activePairKey === nextPairKey
+      && this.activeSessionId === sessionId
+    ) {
+      return session.rawSnapshots[activeRevisionIndex];
+    }
+
     session.activeRevisionIndex = activeRevisionIndex;
-    session.activePairKey = derivePairKey(session, activeRevisionIndex, this.getVisibleWindow(session));
+    session.activePairKey = nextPairKey;
     this.activeSessionId = sessionId;
     this.onDidChangeSessionsEmitter.fire();
     return session.rawSnapshots[activeRevisionIndex];
@@ -205,13 +223,23 @@ export class SessionService {
 
   private indexSessionSnapshots(session: NWayCompareSession): void {
     for (const snapshot of session.rawSnapshots) {
-      this.snapshotBindings.set(normalizedPathKey(snapshot.rawUri), {
+      this.fileBindings.set(normalizedPathKey(snapshot.rawUri), {
         sessionId: session.id,
         revisionIndex: snapshot.revisionIndex,
         revisionId: snapshot.revisionId,
         relativePath: snapshot.relativePath,
-        rawUri: snapshot.rawUri
+        rawUri: snapshot.rawUri,
+        documentUri: snapshot.rawUri,
+        lineNumberSpace: 'original'
       });
+    }
+  }
+
+  private removeBindings(predicate: (binding: SessionFileBinding) => boolean): void {
+    for (const [key, binding] of this.fileBindings.entries()) {
+      if (predicate(binding)) {
+        this.fileBindings.delete(key);
+      }
     }
   }
 }

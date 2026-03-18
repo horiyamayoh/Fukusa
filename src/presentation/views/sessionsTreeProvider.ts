@@ -51,7 +51,7 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionTree
 }
 
 function isSession(element: SessionTreeElement): element is NWayCompareSession {
-  return 'state' in element;
+  return 'rowCount' in element;
 }
 
 function pathLabel(relativePath: string): string {

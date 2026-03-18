@@ -46,4 +46,16 @@ suite('Unit: UriFactory', () => {
     assert.strictEqual(parsed.sessionId, 'session-1');
     assert.strictEqual(parsed.relativePath, 'src/sample.ts');
   });
+
+  test('round-trips session document URIs', () => {
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    const uri = uriFactory.createSessionDocumentUri('session-1', 3, 5, 'src/sample.ts', 'r5');
+    const parsed = uriFactory.parseSessionDocumentUri(uri);
+
+    assert.strictEqual(parsed.sessionId, 'session-1');
+    assert.strictEqual(parsed.windowStart, 3);
+    assert.strictEqual(parsed.revisionIndex, 5);
+    assert.strictEqual(parsed.relativePath, 'src/sample.ts');
+    assert.strictEqual(parsed.revisionLabel, 'r5');
+  });
 });

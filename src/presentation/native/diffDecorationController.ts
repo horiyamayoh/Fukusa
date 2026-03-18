@@ -4,19 +4,37 @@ import { AdjacentPairOverlay, GlobalRowCell, IntralineSegment, NWayCompareSessio
 import { SessionService } from '../../application/sessionService';
 
 interface RevisionDecorations {
+  readonly previousPairEdges: vscode.DecorationOptions[];
+  readonly nextPairEdges: vscode.DecorationOptions[];
   readonly addedLines: vscode.DecorationOptions[];
   readonly removedLines: vscode.DecorationOptions[];
   readonly modifiedLines: vscode.DecorationOptions[];
-  readonly secondaryLines: vscode.DecorationOptions[];
   readonly addedText: vscode.DecorationOptions[];
   readonly removedText: vscode.DecorationOptions[];
 }
 
+export interface RevisionDecorationModel {
+  readonly previousPairEdges: readonly number[];
+  readonly nextPairEdges: readonly number[];
+  readonly addedLines: readonly number[];
+  readonly removedLines: readonly number[];
+  readonly modifiedLines: readonly number[];
+  readonly addedText: readonly TextSegmentDecorationModel[];
+  readonly removedText: readonly TextSegmentDecorationModel[];
+}
+
+export interface TextSegmentDecorationModel {
+  readonly lineNumber: number;
+  readonly startCharacter: number;
+  readonly endCharacter: number;
+}
+
 export class DiffDecorationController implements vscode.Disposable {
+  private previousPairEdgeType: vscode.TextEditorDecorationType | undefined;
+  private nextPairEdgeType: vscode.TextEditorDecorationType | undefined;
   private addedLineType: vscode.TextEditorDecorationType | undefined;
   private removedLineType: vscode.TextEditorDecorationType | undefined;
   private modifiedLineType: vscode.TextEditorDecorationType | undefined;
-  private secondaryLineType: vscode.TextEditorDecorationType | undefined;
   private addedTextType: vscode.TextEditorDecorationType | undefined;
   private removedTextType: vscode.TextEditorDecorationType | undefined;
   private readonly disposables: vscode.Disposable[] = [];
@@ -42,36 +60,34 @@ export class DiffDecorationController implements vscode.Disposable {
     }
 
     const visibleWindow = this.sessionService.getVisibleWindow(session);
-    const activePair = this.sessionService.getActivePair(session);
-    const decorationsByRevision = new Map<number, RevisionDecorations>();
+    const decorationsByRevision = buildRevisionDecorationModels(
+      session,
+      visibleWindow.startRevisionIndex,
+      visibleWindow.endRevisionIndex,
+      this.sessionService.getActivePair(session)?.key
+    );
 
-    for (const pair of session.adjacentPairs) {
-      if (!pairIsVisible(pair, visibleWindow.startRevisionIndex, visibleWindow.endRevisionIndex)) {
+    for (const editor of vscode.window.visibleTextEditors) {
+      const binding = this.sessionService.getSessionFileBinding(editor.document.uri);
+      if (
+        !binding
+        || binding.sessionId !== session.id
+        || binding.lineNumberSpace !== 'globalRow'
+        || binding.windowStart !== visibleWindow.startRevisionIndex
+      ) {
         continue;
       }
 
-      if (activePair && pair.key === activePair.key) {
-        this.collectActivePairDecorations(session, pair, decorationsByRevision);
-      } else {
-        this.collectSecondaryPairDecorations(session, pair, decorationsByRevision);
-      }
-    }
-
-    for (const snapshot of visibleWindow.rawSnapshots) {
-      const editor = vscode.window.visibleTextEditors.find((candidate) => sameUri(candidate.document.uri, snapshot.rawUri));
-      if (!editor) {
-        continue;
-      }
-
-      const decorations = decorationsByRevision.get(snapshot.revisionIndex);
+      const decorations = decorationsByRevision.get(binding.revisionIndex);
       if (!decorations) {
         continue;
       }
 
+      editor.setDecorations(this.previousPairEdgeType!, decorations.previousPairEdges);
+      editor.setDecorations(this.nextPairEdgeType!, decorations.nextPairEdges);
       editor.setDecorations(this.addedLineType!, decorations.addedLines);
       editor.setDecorations(this.removedLineType!, decorations.removedLines);
       editor.setDecorations(this.modifiedLineType!, decorations.modifiedLines);
-      editor.setDecorations(this.secondaryLineType!, decorations.secondaryLines);
       editor.setDecorations(this.addedTextType!, decorations.addedText);
       editor.setDecorations(this.removedTextType!, decorations.removedText);
     }
@@ -80,10 +96,11 @@ export class DiffDecorationController implements vscode.Disposable {
   public dispose(): void {
     this.clearVisibleEditors();
     for (const type of [
+      this.previousPairEdgeType,
+      this.nextPairEdgeType,
       this.addedLineType,
       this.removedLineType,
       this.modifiedLineType,
-      this.secondaryLineType,
       this.addedTextType,
       this.removedTextType
     ]) {
@@ -96,13 +113,26 @@ export class DiffDecorationController implements vscode.Disposable {
   }
 
   private recreateDecorationTypes(): void {
+    this.previousPairEdgeType?.dispose();
+    this.nextPairEdgeType?.dispose();
     this.addedLineType?.dispose();
     this.removedLineType?.dispose();
     this.modifiedLineType?.dispose();
-    this.secondaryLineType?.dispose();
     this.addedTextType?.dispose();
     this.removedTextType?.dispose();
 
+    this.previousPairEdgeType = vscode.window.createTextEditorDecorationType({
+      isWholeLine: true,
+      borderColor: new vscode.ThemeColor('diffEditor.removedLineBackground'),
+      borderStyle: 'solid',
+      borderWidth: '0 0 0 2px'
+    });
+    this.nextPairEdgeType = vscode.window.createTextEditorDecorationType({
+      isWholeLine: true,
+      borderColor: new vscode.ThemeColor('diffEditor.insertedLineBackground'),
+      borderStyle: 'solid',
+      borderWidth: '0 2px 0 0'
+    });
     this.addedLineType = vscode.window.createTextEditorDecorationType({
       isWholeLine: true,
       backgroundColor: new vscode.ThemeColor('diffEditor.insertedLineBackground'),
@@ -121,12 +151,6 @@ export class DiffDecorationController implements vscode.Disposable {
       overviewRulerColor: new vscode.ThemeColor('editorInfo.foreground'),
       overviewRulerLane: vscode.OverviewRulerLane.Right
     });
-    this.secondaryLineType = vscode.window.createTextEditorDecorationType({
-      isWholeLine: true,
-      borderColor: new vscode.ThemeColor('editorLineNumber.foreground'),
-      borderStyle: 'solid',
-      borderWidth: '0 0 0 2px'
-    });
     this.addedTextType = vscode.window.createTextEditorDecorationType({
       backgroundColor: new vscode.ThemeColor('diffEditor.insertedTextBackground')
     });
@@ -141,85 +165,97 @@ export class DiffDecorationController implements vscode.Disposable {
         continue;
       }
 
+      editor.setDecorations(this.previousPairEdgeType!, []);
+      editor.setDecorations(this.nextPairEdgeType!, []);
       editor.setDecorations(this.addedLineType!, []);
       editor.setDecorations(this.removedLineType!, []);
       editor.setDecorations(this.modifiedLineType!, []);
-      editor.setDecorations(this.secondaryLineType!, []);
       editor.setDecorations(this.addedTextType!, []);
       editor.setDecorations(this.removedTextType!, []);
     }
   }
-
-  private collectActivePairDecorations(
-    session: NWayCompareSession,
-    pair: AdjacentPairOverlay,
-    decorationsByRevision: Map<number, RevisionDecorations>
-  ): void {
-    for (const rowNumber of pair.changedRowNumbers) {
-      const row = session.globalRows[rowNumber - 1];
-      if (!row) {
-        continue;
-      }
-
-      const leftCell = row.cells[pair.leftRevisionIndex];
-      const rightCell = row.cells[pair.rightRevisionIndex];
-
-      if (leftCell.present && leftCell.originalLineNumber !== undefined) {
-        const leftDecorations = getOrCreateDecorations(decorationsByRevision, pair.leftRevisionIndex);
-        if (!rightCell.present) {
-          leftDecorations.removedLines.push(toWholeLineDecoration(leftCell.originalLineNumber));
-        } else if (leftCell.text !== rightCell.text) {
-          leftDecorations.modifiedLines.push(toWholeLineDecoration(leftCell.originalLineNumber));
-          pushIntralineDecorations(leftDecorations.removedText, leftCell.originalLineNumber, leftCell.nextChange?.intralineSegments);
-        }
-      }
-
-      if (rightCell.present && rightCell.originalLineNumber !== undefined) {
-        const rightDecorations = getOrCreateDecorations(decorationsByRevision, pair.rightRevisionIndex);
-        if (!leftCell.present) {
-          rightDecorations.addedLines.push(toWholeLineDecoration(rightCell.originalLineNumber));
-        } else if (leftCell.text !== rightCell.text) {
-          rightDecorations.modifiedLines.push(toWholeLineDecoration(rightCell.originalLineNumber));
-          pushIntralineDecorations(rightDecorations.addedText, rightCell.originalLineNumber, rightCell.prevChange?.intralineSegments);
-        }
-      }
-    }
-  }
-
-  private collectSecondaryPairDecorations(
-    session: NWayCompareSession,
-    pair: AdjacentPairOverlay,
-    decorationsByRevision: Map<number, RevisionDecorations>
-  ): void {
-    for (const rowNumber of pair.changedRowNumbers) {
-      const row = session.globalRows[rowNumber - 1];
-      if (!row) {
-        continue;
-      }
-
-      pushSecondaryLine(decorationsByRevision, pair.leftRevisionIndex, row.cells[pair.leftRevisionIndex]);
-      pushSecondaryLine(decorationsByRevision, pair.rightRevisionIndex, row.cells[pair.rightRevisionIndex]);
-    }
-  }
 }
 
-function pushSecondaryLine(
+export function buildRevisionDecorationModels(
+  session: NWayCompareSession,
+  startRevisionIndex: number,
+  endRevisionIndex: number,
+  activePairKey: string | undefined
+): Map<number, RevisionDecorations> {
+  const decorationsByRevision = new Map<number, RevisionDecorations>();
+
+  for (const row of session.globalRows) {
+    for (let revisionIndex = startRevisionIndex; revisionIndex <= endRevisionIndex; revisionIndex += 1) {
+      const cell = row.cells[revisionIndex];
+      pushPairEdgeDecorations(decorationsByRevision, startRevisionIndex, endRevisionIndex, revisionIndex, cell);
+    }
+  }
+
+  const activePair = session.adjacentPairs.find((pair) => (
+    pair.key === activePairKey && pairIsVisible(pair, startRevisionIndex, endRevisionIndex)
+  ));
+  if (activePair) {
+    collectActivePairDecorations(session, activePair, decorationsByRevision);
+  }
+
+  return decorationsByRevision;
+}
+
+function pushPairEdgeDecorations(
   decorationsByRevision: Map<number, RevisionDecorations>,
+  startRevisionIndex: number,
+  endRevisionIndex: number,
   revisionIndex: number,
   cell: GlobalRowCell
 ): void {
-  if (!cell.present || cell.originalLineNumber === undefined) {
-    return;
+  const decorations = getOrCreateDecorations(decorationsByRevision, revisionIndex);
+  if (revisionIndex > startRevisionIndex && cell.prevChange) {
+    decorations.previousPairEdges.push(toWholeLineDecoration(cell.rowNumber));
   }
+  if (revisionIndex < endRevisionIndex && cell.nextChange) {
+    decorations.nextPairEdges.push(toWholeLineDecoration(cell.rowNumber));
+  }
+}
 
-  getOrCreateDecorations(decorationsByRevision, revisionIndex).secondaryLines.push(
-    toWholeLineDecoration(cell.originalLineNumber)
-  );
+function collectActivePairDecorations(
+  session: NWayCompareSession,
+  pair: AdjacentPairOverlay,
+  decorationsByRevision: Map<number, RevisionDecorations>
+): void {
+  for (const rowNumber of pair.changedRowNumbers) {
+    const row = session.globalRows[rowNumber - 1];
+    if (!row) {
+      continue;
+    }
+
+    const leftCell = row.cells[pair.leftRevisionIndex];
+    const rightCell = row.cells[pair.rightRevisionIndex];
+
+    if (leftCell.present) {
+      const leftDecorations = getOrCreateDecorations(decorationsByRevision, pair.leftRevisionIndex);
+      if (!rightCell.present) {
+        leftDecorations.removedLines.push(toWholeLineDecoration(leftCell.rowNumber));
+      } else if (leftCell.text !== rightCell.text) {
+        leftDecorations.modifiedLines.push(toWholeLineDecoration(leftCell.rowNumber));
+        pushIntralineDecorations(leftDecorations.removedText, leftCell.rowNumber, leftCell.nextChange?.intralineSegments);
+      }
+    }
+
+    if (rightCell.present) {
+      const rightDecorations = getOrCreateDecorations(decorationsByRevision, pair.rightRevisionIndex);
+      if (!leftCell.present) {
+        rightDecorations.addedLines.push(toWholeLineDecoration(rightCell.rowNumber));
+      } else if (leftCell.text !== rightCell.text) {
+        rightDecorations.modifiedLines.push(toWholeLineDecoration(rightCell.rowNumber));
+        pushIntralineDecorations(rightDecorations.addedText, rightCell.rowNumber, rightCell.prevChange?.intralineSegments);
+      }
+    }
+  }
 }
 
 function pushIntralineDecorations(
   target: vscode.DecorationOptions[],
-  originalLineNumber: number,
+  lineNumber: number,
   segments: readonly IntralineSegment[] | undefined
 ): void {
   if (!segments) {
@@ -233,9 +269,9 @@ function pushIntralineDecorations(
 
     target.push({
       range: new vscode.Range(
-        originalLineNumber - 1,
+        lineNumber - 1,
         segment.startCharacter,
-        originalLineNumber - 1,
+        lineNumber - 1,
         segment.endCharacter
       )
     });
@@ -252,10 +288,11 @@ function getOrCreateDecorations(
   }
 
   const created: RevisionDecorations = {
+    previousPairEdges: [],
+    nextPairEdges: [],
     addedLines: [],
     removedLines: [],
     modifiedLines: [],
-    secondaryLines: [],
     addedText: [],
     removedText: []
   };
@@ -263,16 +300,12 @@ function getOrCreateDecorations(
   return created;
 }
 
-function toWholeLineDecoration(originalLineNumber: number): vscode.DecorationOptions {
+function toWholeLineDecoration(lineNumber: number): vscode.DecorationOptions {
   return {
-    range: new vscode.Range(originalLineNumber - 1, 0, originalLineNumber - 1, 0)
+    range: new vscode.Range(lineNumber - 1, 0, lineNumber - 1, 0)
   };
 }
 
 function pairIsVisible(pair: AdjacentPairOverlay, startRevisionIndex: number, endRevisionIndex: number): boolean {
   return pair.leftRevisionIndex >= startRevisionIndex && pair.rightRevisionIndex <= endRevisionIndex;
-}
-
-function sameUri(left: vscode.Uri, right: vscode.Uri): boolean {
-  return left.toString(true) === right.toString(true);
 }

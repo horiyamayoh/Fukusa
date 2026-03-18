@@ -60,7 +60,7 @@ export class BlameDecorationController implements vscode.Disposable {
       return;
     }
 
-    if (!['file', 'multidiff'].includes(editor.document.uri.scheme)) {
+    if (!['file', 'multidiff', 'multidiff-session-doc'].includes(editor.document.uri.scheme)) {
       this.clear(editor);
       return;
     }
@@ -139,12 +139,19 @@ export class BlameDecorationController implements vscode.Disposable {
     return {
       lines: session.globalRows.flatMap((row) => {
         const cell = row.cells[binding.revisionIndex];
-        if (cell.blameAgeBucket === undefined || cell.originalLineNumber === undefined) {
+        if (cell.blameAgeBucket === undefined) {
+          return [];
+        }
+
+        const lineNumber = binding.lineNumberSpace === 'globalRow'
+          ? row.rowNumber
+          : cell.originalLineNumber;
+        if (lineNumber === undefined) {
           return [];
         }
 
         return {
-          lineNumber: cell.originalLineNumber,
+          lineNumber,
           ageBucket: cell.blameAgeBucket,
           revision: snapshot.revisionId,
           author: snapshot.revisionLabel,

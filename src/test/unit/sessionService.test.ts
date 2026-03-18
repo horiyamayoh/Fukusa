@@ -79,6 +79,43 @@ suite('Unit: SessionService', () => {
     assert.strictEqual(service.listSessions().length, 2);
   });
 
+  test('replaces compare document bindings for the active visible window', () => {
+    const service = new SessionService();
+    const session = service.createBrowserSession(createSession('session-bindings', createRevisions(3)));
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    const firstWindowUri = uriFactory.createSessionDocumentUri(session.id, 0, 1, 'src/sample.ts', 'r1');
+    const secondWindowUri = uriFactory.createSessionDocumentUri(session.id, 1, 2, 'src/sample.ts', 'r2');
+
+    service.replaceVisibleWindowBindings(session.id, [
+      {
+        sessionId: session.id,
+        revisionIndex: 1,
+        revisionId: 'rev-1',
+        relativePath: 'src/sample.ts',
+        rawUri: session.rawSnapshots[1].rawUri,
+        documentUri: firstWindowUri,
+        lineNumberSpace: 'globalRow',
+        windowStart: 0
+      }
+    ]);
+    service.replaceVisibleWindowBindings(session.id, [
+      {
+        sessionId: session.id,
+        revisionIndex: 2,
+        revisionId: 'rev-2',
+        relativePath: 'src/sample.ts',
+        rawUri: session.rawSnapshots[2].rawUri,
+        documentUri: secondWindowUri,
+        lineNumberSpace: 'globalRow',
+        windowStart: 1
+      }
+    ]);
+
+    assert.strictEqual(service.getSessionFileBinding(firstWindowUri), undefined);
+    assert.strictEqual(service.getSessionFileBinding(secondWindowUri)?.revisionIndex, 2);
+    assert.strictEqual(service.getSessionFileBinding(secondWindowUri)?.lineNumberSpace, 'globalRow');
+  });
+
   function createSession(sessionId: string, revisions: readonly RevisionRef[]): NWayCompareSession {
     const uriFactory = new UriFactory(new RepositoryRegistry());
     return {

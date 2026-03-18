@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as path from 'path';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 
@@ -17,17 +18,29 @@ suite('Unit: NativeCompareSessionController', () => {
     sinon.restore();
   });
 
-  test('renders native editors and shifts overflow windows by one revision', async () => {
-    const textDocument = {
-      uri: vscode.Uri.file('c:/repo/.fukusa-shadow/revisions/stub/src/sample.ts'),
-      lineCount: 1
-    } as vscode.TextDocument;
-    const openTextDocumentStub = sinon.stub(vscode.workspace, 'openTextDocument').resolves(textDocument);
-    const showTextDocumentStub = sinon.stub(vscode.window, 'showTextDocument').resolves({
-      document: textDocument,
-      setDecorations: () => undefined,
-      revealRange: () => undefined
-    } as unknown as vscode.TextEditor);
+  test('renders native editors and shifts overflow windows by one revision without leaving stale tabs', async () => {
+    const harness = createTabHarness();
+    stubTabGroups(harness.tabGroups);
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+
+    const openTextDocumentStub = sinon.stub(vscode.workspace, 'openTextDocument').callsFake((async (...args: unknown[]) => {
+      const uri = args[0] as vscode.Uri;
+      return {
+        uri,
+        lineCount: 1
+      } as vscode.TextDocument;
+    }) as unknown as typeof vscode.workspace.openTextDocument);
+    const showTextDocumentStub = sinon.stub(vscode.window, 'showTextDocument').callsFake((async (...args: unknown[]) => {
+      const document = args[0] as vscode.TextDocument;
+      harness.open(document.uri);
+      return {
+        document,
+        setDecorations: () => undefined,
+        revealRange: () => undefined,
+        visibleRanges: []
+      } as unknown as vscode.TextEditor;
+    }) as unknown as typeof vscode.window.showTextDocument);
+
     const layoutController = new TestLayoutController();
     const sessionService = new SessionService();
     const diffDecorationController = { refresh: sinon.stub(), dispose: sinon.stub() } as unknown as DiffDecorationController;
@@ -38,6 +51,7 @@ suite('Unit: NativeCompareSessionController', () => {
     } as unknown as EditorSyncController;
     const controller = new NativeCompareSessionController(
       sessionService,
+      uriFactory,
       layoutController,
       diffDecorationController,
       editorSyncController,
@@ -51,9 +65,59 @@ suite('Unit: NativeCompareSessionController', () => {
     assert.deepStrictEqual(layoutController.calls, [9, 9]);
     assert.strictEqual(openTextDocumentStub.callCount, 18);
     assert.strictEqual(showTextDocumentStub.callCount, 18);
+    assert.strictEqual(harness.closeStub.callCount, 1);
+    assert.strictEqual(harness.openTabs.length, 9);
     assert.strictEqual(session.pageStart, 1);
+    assert.ok(harness.openTabs.every((tab) => ((tab.input as { readonly uri: vscode.Uri }).uri.scheme === 'multidiff-session-doc')));
+    assert.ok(harness.openTabs.every((tab) => path.basename((tab.input as { readonly uri: vscode.Uri }).uri.path).endsWith('sample.ts')));
     assert.strictEqual((editorSyncController.setSession as sinon.SinonStub).callCount >= 2, true);
     assert.strictEqual((diffDecorationController.refresh as sinon.SinonStub).callCount >= 2, true);
+
+    controller.dispose();
+  });
+
+  test('closing one tracked tab cascades to the rest of the session and removes it from session service', async () => {
+    const harness = createTabHarness();
+    stubTabGroups(harness.tabGroups);
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+
+    sinon.stub(vscode.workspace, 'openTextDocument').callsFake((async (...args: unknown[]) => {
+      const uri = args[0] as vscode.Uri;
+      return {
+        uri,
+        lineCount: 1
+      } as vscode.TextDocument;
+    }) as unknown as typeof vscode.workspace.openTextDocument);
+    sinon.stub(vscode.window, 'showTextDocument').callsFake((async (...args: unknown[]) => {
+      const document = args[0] as vscode.TextDocument;
+      harness.open(document.uri);
+      return {
+        document,
+        setDecorations: () => undefined,
+        revealRange: () => undefined,
+        visibleRanges: []
+      } as unknown as vscode.TextEditor;
+    }) as unknown as typeof vscode.window.showTextDocument);
+
+    const sessionService = new SessionService();
+    const controller = new NativeCompareSessionController(
+      sessionService,
+      uriFactory,
+      new TestLayoutController(),
+      { refresh: sinon.stub(), dispose: sinon.stub() } as unknown as DiffDecorationController,
+      { setSession: sinon.stub(), clear: sinon.stub(), dispose: sinon.stub() } as unknown as EditorSyncController,
+      new OutputLogger('NativeCompareSessionController Test')
+    );
+    const session = sessionService.createBrowserSession(createSession('session-2', createRevisions(3)));
+
+    await controller.openSession(session);
+    const closedTab = harness.openTabs[1];
+    harness.userClose(closedTab);
+    await flushAsyncWork();
+
+    assert.strictEqual(harness.closeStub.callCount, 1);
+    assert.strictEqual(harness.openTabs.length, 0);
+    assert.strictEqual(sessionService.getSession(session.id), undefined);
 
     controller.dispose();
   });
@@ -126,4 +190,99 @@ function createRevisions(count: number): RevisionRef[] {
     id: `rev-${index}`,
     shortLabel: `r${index}`
   }));
+}
+
+function stubTabGroups(tabGroups: vscode.TabGroups): void {
+  (sinon as unknown as {
+    replaceGetter(object: object, property: string, getter: () => unknown): void;
+  }).replaceGetter(vscode.window, 'tabGroups', () => tabGroups);
+}
+
+function createTabHarness(): {
+  readonly tabGroups: vscode.TabGroups;
+  readonly closeStub: sinon.SinonStub;
+  readonly openTabs: vscode.Tab[];
+  readonly open: (uri: vscode.Uri) => void;
+  readonly userClose: (tab: vscode.Tab) => void;
+} {
+  const tabs: vscode.Tab[] = [];
+  const tabChangeEmitter = new vscode.EventEmitter<vscode.TabChangeEvent>();
+  const tabGroupChangeEmitter = new vscode.EventEmitter<vscode.TabGroupChangeEvent>();
+
+  const group = {
+    isActive: true,
+    viewColumn: vscode.ViewColumn.One,
+    get activeTab(): vscode.Tab | undefined {
+      return tabs[0];
+    },
+    get tabs(): readonly vscode.Tab[] {
+      return tabs;
+    }
+  } as vscode.TabGroup;
+
+  const closeStub = sinon.stub().callsFake(async (target: vscode.Tab | readonly vscode.Tab[]) => {
+    const closing = Array.isArray(target) ? [...target] : [target];
+    const closingSet = new Set(closing);
+    const closedTabs = tabs.filter((tab) => closingSet.has(tab));
+    for (const tab of closedTabs) {
+      tabs.splice(tabs.indexOf(tab), 1);
+    }
+
+    tabChangeEmitter.fire({
+      opened: [],
+      closed: closedTabs,
+      changed: []
+    });
+    return true;
+  });
+
+  const tabGroups = {
+    all: [group],
+    activeTabGroup: group,
+    onDidChangeTabs: tabChangeEmitter.event,
+    onDidChangeTabGroups: tabGroupChangeEmitter.event,
+    close: closeStub
+  } as unknown as vscode.TabGroups;
+
+  function open(uri: vscode.Uri): void {
+    if (tabs.some((tab) => ((tab.input as { readonly uri: vscode.Uri }).uri.toString(true) === uri.toString(true)))) {
+      return;
+    }
+
+    tabs.push({
+      label: path.basename(uri.fsPath),
+      group,
+      input: { uri } as unknown as vscode.TabInputText,
+      isActive: false,
+      isDirty: false,
+      isPinned: true,
+      isPreview: false
+    });
+  }
+
+  function userClose(tab: vscode.Tab): void {
+    const index = tabs.indexOf(tab);
+    if (index >= 0) {
+      tabs.splice(index, 1);
+    }
+
+    tabChangeEmitter.fire({
+      opened: [],
+      closed: [tab],
+      changed: []
+    });
+  }
+
+  return {
+    tabGroups,
+    closeStub,
+    openTabs: tabs,
+    open,
+    userClose
+  };
+}
+
+async function flushAsyncWork(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }

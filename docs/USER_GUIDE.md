@@ -5,7 +5,7 @@
 1. Open a file inside a Git or SVN working copy.
 2. Run `Fukusa: Browse Revisions`.
 3. Pick 2 or more revisions.
-4. Fukusa opens the selected revisions as native VS Code editors ordered from oldest to newest.
+4. Fukusa opens the selected revisions as aligned compare documents ordered from oldest to newest.
 
 ## Reading the Session
 
@@ -14,12 +14,14 @@
 - The active adjacent pair is focus-driven: focused editor + right neighbor, or left neighbor if the focused editor is the last visible column.
 - `Open Active Session Snapshot` uses the focused revision.
 - `Open Active Session Pair Diff` uses the focused adjacent pair.
-- Scroll synchronization uses logical aligned rows, then reveals the nearest matching real line in each peer editor.
+- `Close Active Session` closes all visible tabs that belong to the current session.
+- Scroll synchronization treats the top visible aligned row as the source of truth, so any visible compare column can drive the others.
+- All visible adjacent pairs show diff edges; the focused pair also gets full line and intraline emphasis.
 - `Shift Window Left` and `Shift Window Right` move the visible page only when a session has more than 9 revisions.
 
 ## Language Features
 
-- The main compare surface is already native VS Code editors.
+- The main compare surface is a standard VS Code text editor backed by aligned session documents.
 - Syntax highlighting, definition jump, hover, font, theme, cursor, and selection behavior come from VS Code directly.
 
 ## Shadow Workspace Layout

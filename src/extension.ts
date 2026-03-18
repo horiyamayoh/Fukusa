@@ -16,6 +16,7 @@ import { SessionBuilderService } from './application/sessionBuilderService';
 import { SessionService } from './application/sessionService';
 import { createBrowseRevisionsCommand } from './commands/browseRevisions';
 import { createClearAllCacheCommand, createClearCurrentRepoCacheCommand } from './commands/clearCache';
+import { createCloseActiveSessionCommand } from './commands/closeActiveSession';
 import { CommandContext } from './commands/commandContext';
 import { createOpenForCurrentFileCommand } from './commands/openForCurrentFile';
 import { createOpenForExplorerFileCommand } from './commands/openForExplorerFile';
@@ -31,6 +32,7 @@ import { createShiftWindowRightCommand } from './commands/shiftWindowRight';
 import { createToggleBlameHeatmapCommand } from './commands/toggleBlameHeatmap';
 import { createWarmCacheCommand } from './commands/warmCache';
 import { MemoryCache } from './infrastructure/cache/memoryCache';
+import { AlignedSessionDocumentProvider } from './infrastructure/fs/alignedSessionDocumentProvider';
 import { PersistentCache } from './infrastructure/cache/persistentCache';
 import { LanguageModeResolver } from './infrastructure/fs/languageModeResolver';
 import { SnapshotFsProvider } from './infrastructure/fs/snapshotFsProvider';
@@ -66,6 +68,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const languageModeResolver = new LanguageModeResolver(uriFactory);
   const revisionPickerService = new RevisionPickerService(repositoryService, cacheService);
   const sessionService = new SessionService();
+  const alignedSessionDocumentProvider = new AlignedSessionDocumentProvider(sessionService, uriFactory, output);
   const alignmentService = new SessionAlignmentService();
   const shadowWorkspaceService = new ShadowWorkspaceService(repositoryService, output);
   const tempSnapshotMirror = new TempSnapshotMirror(context.globalStorageUri, repositoryService, uriFactory, cacheService);
@@ -86,6 +89,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const editorSyncController = new EditorSyncController(sessionService);
   const nativeCompareSessionController = new NativeCompareSessionController(
     sessionService,
+    uriFactory,
     new EditorLayoutController(),
     diffDecorationController,
     editorSyncController,
@@ -117,9 +121,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     editorSyncController,
     nativeCompareSessionController,
     vscode.workspace.registerFileSystemProvider('multidiff', snapshotFsProvider, { isReadonly: true }),
+    vscode.workspace.registerTextDocumentContentProvider('multidiff-session-doc', alignedSessionDocumentProvider),
     vscode.window.registerTreeDataProvider('multidiff.sessions', sessionsTreeProvider),
     vscode.window.registerTreeDataProvider('multidiff.cache', cacheTreeProvider),
     vscode.commands.registerCommand('multidiff.browseRevisions', createBrowseRevisionsCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.closeActiveSession', createCloseActiveSessionCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openActiveSessionSnapshot', createOpenActiveSessionSnapshotCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openActiveSessionPairDiff', createOpenActiveSessionPairDiffCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openForCurrentFile', createOpenForCurrentFileCommand(commandContext)),

@@ -1,12 +1,24 @@
 import * as vscode from 'vscode';
 
-import { AlignedLineMap, NWayCompareSession, VisibleRevisionWindow } from '../../adapters/common/types';
+import { NWayCompareSession, VisibleRevisionWindow } from '../../adapters/common/types';
 import { SessionService } from '../../application/sessionService';
+
+interface PendingSyncRequest {
+  readonly sourceUri: vscode.Uri;
+  readonly revisionIndex: number;
+  readonly topLine: number;
+  readonly generation: number;
+  readonly windowStart: number;
+}
 
 export class EditorSyncController implements vscode.Disposable {
   private activeSessionId: string | undefined;
   private visibleWindow: VisibleRevisionWindow | undefined;
+  private renderGeneration = 0;
   private syncInProgress = false;
+  private pendingSync: PendingSyncRequest | undefined;
+  private pendingHandle: NodeJS.Timeout | undefined;
+  private readonly lastRevealByUri = new Map<string, { readonly generation: number; readonly line: number }>();
   private readonly disposables: vscode.Disposable[] = [];
 
   public constructor(private readonly sessionService: SessionService) {
@@ -17,17 +29,24 @@ export class EditorSyncController implements vscode.Disposable {
     );
   }
 
-  public setSession(session: NWayCompareSession, visibleWindow: VisibleRevisionWindow): void {
+  public setSession(session: NWayCompareSession, visibleWindow: VisibleRevisionWindow, renderGeneration = 0): void {
     this.activeSessionId = session.id;
     this.visibleWindow = visibleWindow;
+    this.renderGeneration = renderGeneration;
+    this.clearPendingSync();
+    this.lastRevealByUri.clear();
   }
 
   public clear(): void {
     this.activeSessionId = undefined;
     this.visibleWindow = undefined;
+    this.renderGeneration = 0;
+    this.clearPendingSync();
+    this.lastRevealByUri.clear();
   }
 
   public dispose(): void {
+    this.clearPendingSync();
     while (this.disposables.length > 0) {
       this.disposables.pop()?.dispose();
     }
@@ -38,20 +57,44 @@ export class EditorSyncController implements vscode.Disposable {
       return;
     }
 
-    const activeEditor = vscode.window.activeTextEditor;
-    if (!activeEditor || !sameUri(activeEditor.document.uri, event.textEditor.document.uri)) {
-      return;
-    }
-
     const binding = this.sessionService.getSessionFileBinding(event.textEditor.document.uri);
-    if (!binding || binding.sessionId !== this.activeSessionId) {
+    if (
+      !binding
+      || binding.sessionId !== this.activeSessionId
+      || binding.lineNumberSpace !== 'globalRow'
+      || binding.windowStart !== this.visibleWindow.startRevisionIndex
+    ) {
       return;
     }
 
-    if (
-      binding.revisionIndex < this.visibleWindow.startRevisionIndex
-      || binding.revisionIndex > this.visibleWindow.endRevisionIndex
-    ) {
+    const firstVisibleRange = event.visibleRanges[0];
+    if (!firstVisibleRange) {
+      return;
+    }
+
+    this.sessionService.updateFocusFromUri(event.textEditor.document.uri);
+    this.scheduleSync({
+      sourceUri: event.textEditor.document.uri,
+      revisionIndex: binding.revisionIndex,
+      topLine: firstVisibleRange.start.line,
+      generation: this.renderGeneration,
+      windowStart: binding.windowStart
+    });
+  }
+
+  private scheduleSync(request: PendingSyncRequest): void {
+    this.pendingSync = request;
+    this.clearPendingHandle();
+    this.pendingHandle = setTimeout(() => {
+      void this.flushPendingSync();
+    }, 10);
+  }
+
+  private async flushPendingSync(): Promise<void> {
+    this.clearPendingHandle();
+    const request = this.pendingSync;
+    this.pendingSync = undefined;
+    if (!request || request.generation !== this.renderGeneration || !this.activeSessionId || !this.visibleWindow) {
       return;
     }
 
@@ -60,91 +103,71 @@ export class EditorSyncController implements vscode.Disposable {
       return;
     }
 
-    const sourceSnapshot = session.rawSnapshots[binding.revisionIndex];
-    const firstVisibleRange = event.visibleRanges[0];
-    if (!firstVisibleRange) {
-      return;
-    }
-
-    const sourceGlobalRow = resolveGlobalRow(sourceSnapshot.lineMap, firstVisibleRange.start.line + 1, session.rowCount);
-    if (!sourceGlobalRow) {
+    const sourceBinding = this.sessionService.getSessionFileBinding(request.sourceUri);
+    if (
+      !sourceBinding
+      || sourceBinding.sessionId !== session.id
+      || sourceBinding.lineNumberSpace !== 'globalRow'
+      || sourceBinding.windowStart !== request.windowStart
+      || request.windowStart !== this.visibleWindow.startRevisionIndex
+    ) {
       return;
     }
 
     this.syncInProgress = true;
     try {
-      for (const snapshot of this.visibleWindow.rawSnapshots) {
-        if (snapshot.revisionIndex === binding.revisionIndex) {
+      for (const editor of vscode.window.visibleTextEditors) {
+        const targetBinding = this.sessionService.getSessionFileBinding(editor.document.uri);
+        if (
+          !targetBinding
+          || targetBinding.sessionId !== session.id
+          || targetBinding.lineNumberSpace !== 'globalRow'
+          || targetBinding.windowStart !== request.windowStart
+          || targetBinding.revisionIndex === request.revisionIndex
+        ) {
           continue;
         }
 
-        const targetEditor = vscode.window.visibleTextEditors.find((editor) => sameUri(editor.document.uri, snapshot.rawUri));
-        if (!targetEditor) {
+        const safeLine = clampZeroBasedLine(editor.document, request.topLine);
+        if (this.shouldSkipReveal(editor, safeLine, request.generation)) {
           continue;
         }
 
-        const targetLine = resolveOriginalLine(snapshot.lineMap, sourceGlobalRow, session.rowCount);
-        const safeLine = clampLine(targetEditor.document, targetLine);
-        const targetRange = new vscode.Range(safeLine, 0, safeLine, 0);
-        targetEditor.revealRange(targetRange, vscode.TextEditorRevealType.AtTop);
+        editor.revealRange(new vscode.Range(safeLine, 0, safeLine, 0), vscode.TextEditorRevealType.AtTop);
+        this.lastRevealByUri.set(editor.document.uri.toString(true), {
+          generation: request.generation,
+          line: safeLine
+        });
       }
     } finally {
       this.syncInProgress = false;
     }
   }
+
+  private shouldSkipReveal(editor: vscode.TextEditor, targetLine: number, generation: number): boolean {
+    const visibleTop = editor.visibleRanges[0]?.start.line;
+    if (visibleTop === targetLine) {
+      return true;
+    }
+
+    const lastReveal = this.lastRevealByUri.get(editor.document.uri.toString(true));
+    return lastReveal?.generation === generation && lastReveal.line === targetLine;
+  }
+
+  private clearPendingSync(): void {
+    this.pendingSync = undefined;
+    this.clearPendingHandle();
+  }
+
+  private clearPendingHandle(): void {
+    if (this.pendingHandle) {
+      clearTimeout(this.pendingHandle);
+      this.pendingHandle = undefined;
+    }
+  }
 }
 
-function resolveGlobalRow(lineMap: AlignedLineMap, originalLineNumber: number, rowCount: number): number | undefined {
-  const direct = lineMap.originalLineToRow.get(originalLineNumber);
-  if (direct !== undefined) {
-    return direct;
-  }
-
-  for (let offset = 1; offset <= rowCount; offset += 1) {
-    const previous = lineMap.originalLineToRow.get(originalLineNumber - offset);
-    if (previous !== undefined) {
-      return previous;
-    }
-
-    const next = lineMap.originalLineToRow.get(originalLineNumber + offset);
-    if (next !== undefined) {
-      return next;
-    }
-  }
-
-  return undefined;
-}
-
-function resolveOriginalLine(lineMap: AlignedLineMap, globalRow: number, rowCount: number): number | undefined {
-  const direct = lineMap.rowToOriginalLine.get(globalRow);
-  if (direct !== undefined) {
-    return direct;
-  }
-
-  for (let offset = 1; offset <= rowCount; offset += 1) {
-    const next = lineMap.rowToOriginalLine.get(globalRow + offset);
-    if (next !== undefined) {
-      return next;
-    }
-
-    const previous = lineMap.rowToOriginalLine.get(globalRow - offset);
-    if (previous !== undefined) {
-      return previous;
-    }
-  }
-
-  return undefined;
-}
-
-function clampLine(document: vscode.TextDocument, originalLineNumber: number | undefined): number {
+function clampZeroBasedLine(document: vscode.TextDocument, line: number): number {
   const lastLine = Math.max(0, document.lineCount - 1);
-  if (originalLineNumber === undefined) {
-    return 0;
-  }
-
-  return Math.max(0, Math.min(originalLineNumber - 1, lastLine));
-}
-
-function sameUri(left: vscode.Uri, right: vscode.Uri): boolean {
-  return left.toString(true) === right.toString(true);
+  return Math.max(0, Math.min(line, lastLine));
 }

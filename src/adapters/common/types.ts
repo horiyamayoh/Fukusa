@@ -136,9 +136,13 @@ export interface NativeEditorBinding {
   readonly revisionId: string;
   readonly relativePath: string;
   readonly rawUri: vscode.Uri;
+  readonly documentUri: vscode.Uri;
+  readonly lineNumberSpace: SessionLineNumberSpace;
+  readonly windowStart?: number;
 }
 
 export type CompareSnapshot = RawSnapshot;
+export type SessionLineNumberSpace = 'original' | 'globalRow';
 export type SessionFileBinding = NativeEditorBinding;
 
 export interface BlameLineInfo {
