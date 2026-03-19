@@ -32,10 +32,17 @@ suite('Unit: openDiffSelection', () => {
 
     assert.strictEqual(createSessionStub.callCount, 1);
     assert.strictEqual(createSessionStub.firstCall.args[1].length, 2);
+    assert.deepStrictEqual(createSessionStub.firstCall.args[2], {
+      pairProjection: { mode: 'adjacent' },
+      surfaceMode: 'native'
+    });
     assert.strictEqual(openSessionStub.callCount, 1);
   });
 
   test('opens a multi-revision compare session when three revisions are selected', async () => {
+    sinon.stub(vscode.window, 'showQuickPick').resolves({
+      pairProjectionMode: 'base'
+    } as never);
     const { context, createSessionStub, openSessionStub } = createContext([
       { id: 'a1', shortLabel: 'a1' },
       { id: 'b2', shortLabel: 'b2' },
@@ -46,6 +53,36 @@ suite('Unit: openDiffSelection', () => {
 
     assert.strictEqual(createSessionStub.callCount, 1);
     assert.strictEqual(createSessionStub.firstCall.args[1].length, 3);
+    assert.deepStrictEqual(createSessionStub.firstCall.args[2], {
+      pairProjection: { mode: 'base' },
+      surfaceMode: 'native'
+    });
+    assert.strictEqual(openSessionStub.callCount, 1);
+  });
+
+  test('opens a custom multi-revision compare session when explicit pairs are selected', async () => {
+    const showQuickPickStub = sinon.stub(vscode.window, 'showQuickPick');
+    showQuickPickStub.onFirstCall().resolves({
+      pairProjectionMode: 'custom'
+    } as never);
+    showQuickPickStub.onSecondCall().resolves([
+      { pairKey: '0:2' },
+      { pairKey: '1:3' }
+    ] as never);
+    const { context, createSessionStub, openSessionStub } = createContext([
+      { id: 'a1', shortLabel: 'a1' },
+      { id: 'b2', shortLabel: 'b2' },
+      { id: 'c3', shortLabel: 'c3' },
+      { id: 'd4', shortLabel: 'd4' }
+    ]);
+
+    await openDiffSelection(context, resource);
+
+    assert.strictEqual(createSessionStub.callCount, 1);
+    assert.deepStrictEqual(createSessionStub.firstCall.args[2], {
+      pairProjection: { mode: 'custom', pairKeys: ['0:2', '1:3'] },
+      surfaceMode: 'native'
+    });
     assert.strictEqual(openSessionStub.callCount, 1);
   });
 });
@@ -71,7 +108,7 @@ function createContext(revisions: readonly RevisionRef[]): {
         createSession: createSessionStub
       } as never,
       sessionService: {} as never,
-      nativeCompareSessionController: {
+      compareSessionController: {
         openSession: openSessionStub
       } as never,
       cacheService: {} as never,

@@ -3,6 +3,13 @@ import * as vscode from 'vscode';
 export type RepositoryKind = 'git' | 'svn';
 export type CacheValueKind = 'binary' | 'json';
 export type CompareChangeKind = 'added' | 'removed' | 'modified';
+export type ComparePairProjectionMode = 'adjacent' | 'base' | 'all' | 'custom';
+export type CompareSurfaceMode = 'native' | 'panel';
+
+export interface ComparePairProjection {
+  readonly mode: ComparePairProjectionMode;
+  readonly pairKeys?: readonly string[];
+}
 
 export interface RepoContext {
   readonly kind: RepositoryKind;
@@ -82,13 +89,15 @@ export interface GlobalRow {
   readonly cells: readonly GlobalRowCell[];
 }
 
-export interface AdjacentPairOverlay {
+export interface ComparePairOverlay {
   readonly leftRevisionIndex: number;
   readonly rightRevisionIndex: number;
   readonly key: string;
   readonly label: string;
   readonly changedRowNumbers: readonly number[];
 }
+
+export type AdjacentPairOverlay = ComparePairOverlay;
 
 export interface RawSnapshot {
   readonly snapshotUri: vscode.Uri;
@@ -125,9 +134,24 @@ export interface NWayCompareSession {
   readonly rawSnapshots: readonly RawSnapshot[];
   readonly globalRows: readonly GlobalRow[];
   readonly adjacentPairs: readonly AdjacentPairOverlay[];
-  activeRevisionIndex: number;
-  activePairKey?: string;
-  pageStart: number;
+  readonly pairProjection: ComparePairProjection;
+  readonly surfaceMode: CompareSurfaceMode;
+}
+
+export interface SessionViewState {
+  readonly activeRevisionIndex: number;
+  readonly activePairKey?: string;
+  readonly pageStart: number;
+}
+
+export interface SessionProjectedLineMap {
+  readonly documentLineToGlobalRow: ReadonlyMap<number, number>;
+  readonly globalRowToDocumentLine: ReadonlyMap<number, number>;
+}
+
+export interface SessionRowProjectionState {
+  readonly collapseUnchanged: boolean;
+  readonly expandedGapKeys: readonly string[];
 }
 
 export interface NativeEditorBinding {
@@ -139,6 +163,8 @@ export interface NativeEditorBinding {
   readonly documentUri: vscode.Uri;
   readonly lineNumberSpace: SessionLineNumberSpace;
   readonly windowStart?: number;
+  readonly projectedGlobalRows?: readonly number[];
+  readonly projectedLineMap?: SessionProjectedLineMap;
 }
 
 export type CompareSnapshot = RawSnapshot;

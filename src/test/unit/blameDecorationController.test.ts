@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 
 import { NWayCompareSession, RepoContext } from '../../adapters/common/types';
 import { RepositoryRegistry } from '../../application/repositoryRegistry';
+import { createProjectedLineMap } from '../../application/sessionRowProjection';
 import { SessionService } from '../../application/sessionService';
 import { UriFactory } from '../../infrastructure/fs/uriFactory';
 import { BlameDecorationController } from '../../presentation/decorations/blameDecorationController';
@@ -42,6 +43,45 @@ suite('Unit: BlameDecorationController', () => {
     } as vscode.TextEditor);
 
     assert.deepStrictEqual(heatmap?.lines.map((line) => line.lineNumber), [1, 2]);
+
+    controller.dispose();
+  });
+
+  test('skips hidden rows and maps visible rows to projected document lines', () => {
+    const sessionService = new SessionService();
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    const session = sessionService.createBrowserSession(createSession('session-blame-projected'));
+    const compareUri = uriFactory.createSessionDocumentUri(session.id, 0, 1, 'src/sample.ts', 'r1');
+    sessionService.replaceVisibleWindowBindings(session.id, [
+      {
+        sessionId: session.id,
+        revisionIndex: 1,
+        revisionId: 'rev-1',
+        relativePath: 'src/sample.ts',
+        rawUri: session.rawSnapshots[1].rawUri,
+        documentUri: compareUri,
+        lineNumberSpace: 'globalRow',
+        windowStart: 0,
+        projectedGlobalRows: [2],
+        projectedLineMap: createProjectedLineMap([2])
+      }
+    ]);
+
+    const controller = new BlameDecorationController(
+      {} as never,
+      sessionService,
+      new OutputLogger('BlameDecorationController Test')
+    );
+
+    const heatmap = (controller as unknown as {
+      getSessionHeatmap(editor: vscode.TextEditor): { readonly lines: readonly { readonly lineNumber: number }[] } | undefined;
+    }).getSessionHeatmap({
+      document: {
+        uri: compareUri
+      } as vscode.TextDocument
+    } as vscode.TextEditor);
+
+    assert.deepStrictEqual(heatmap?.lines.map((line) => line.lineNumber), [1]);
 
     controller.dispose();
   });
@@ -104,8 +144,7 @@ function createSession(sessionId: string): NWayCompareSession {
         changedRowNumbers: [2]
       }
     ],
-    activeRevisionIndex: 0,
-    activePairKey: '0:1',
-    pageStart: 0
+    pairProjection: { mode: 'adjacent' },
+    surfaceMode: 'native'
   };
 }

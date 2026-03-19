@@ -1,4 +1,4 @@
-import { diffLines, diffWordsWithSpace } from 'diff';
+import { diffWordsWithSpace } from 'diff';
 
 import {
   AdjacentPairOverlay,
@@ -12,20 +12,7 @@ import {
   IntralineSegment,
   RawSnapshot
 } from '../adapters/common/types';
-
-interface CanonicalEntry {
-  readonly lineNumber: number;
-  readonly text: string;
-}
-
-interface CanonicalRow {
-  readonly entries: Array<CanonicalEntry | undefined>;
-}
-
-interface PairAlignmentRow {
-  readonly left?: CanonicalEntry;
-  readonly right?: CanonicalEntry;
-}
+import { buildCanonicalRows, CanonicalEntry, CanonicalRow } from './nWayAlignmentEngine';
 
 export class SessionAlignmentService {
   public buildState(sources: readonly CompareSourceDocument[]): CompareAlignmentState {
@@ -172,210 +159,6 @@ function buildLineMap(rows: readonly GlobalRow[], sourceIndex: number): AlignedL
   };
 }
 
-function buildCanonicalRows(linesBySource: readonly string[][]): CanonicalRow[] {
-  const documentCount = linesBySource.length;
-  let rows = linesBySource[0].map<CanonicalRow>((text, index) => ({
-    entries: createEntries(documentCount, 0, {
-      lineNumber: index + 1,
-      text
-    })
-  }));
-
-  for (let sourceIndex = 1; sourceIndex < documentCount; sourceIndex += 1) {
-    const pairRows = buildPairAlignmentRows(linesBySource[sourceIndex - 1], linesBySource[sourceIndex]);
-    rows = mergePairRows(rows, pairRows, linesBySource[sourceIndex - 1].length, sourceIndex);
-  }
-
-  return rows;
-}
-
-function buildPairAlignmentRows(leftLines: readonly string[], rightLines: readonly string[]): PairAlignmentRow[] {
-  const changes = diffLines(leftLines.join('\n'), rightLines.join('\n'), { stripTrailingCr: true });
-  const rows: PairAlignmentRow[] = [];
-  let leftLineNumber = 1;
-  let rightLineNumber = 1;
-
-  for (let changeIndex = 0; changeIndex < changes.length; changeIndex += 1) {
-    const change = changes[changeIndex];
-    const nextChange = changes[changeIndex + 1];
-
-    if ((change.removed && nextChange?.added) || (change.added && nextChange?.removed)) {
-      const removedLines = extractDiffLines(change.removed ? change.value : nextChange.value);
-      const addedLines = extractDiffLines(change.added ? change.value : nextChange.value);
-      const pairedCount = Math.min(removedLines.length, addedLines.length);
-
-      for (let offset = 0; offset < pairedCount; offset += 1) {
-        rows.push({
-          left: {
-            lineNumber: leftLineNumber,
-            text: removedLines[offset]
-          },
-          right: {
-            lineNumber: rightLineNumber,
-            text: addedLines[offset]
-          }
-        });
-        leftLineNumber += 1;
-        rightLineNumber += 1;
-      }
-
-      for (let offset = pairedCount; offset < removedLines.length; offset += 1) {
-        rows.push({
-          left: {
-            lineNumber: leftLineNumber,
-            text: removedLines[offset]
-          }
-        });
-        leftLineNumber += 1;
-      }
-
-      for (let offset = pairedCount; offset < addedLines.length; offset += 1) {
-        rows.push({
-          right: {
-            lineNumber: rightLineNumber,
-            text: addedLines[offset]
-          }
-        });
-        rightLineNumber += 1;
-      }
-
-      changeIndex += 1;
-      continue;
-    }
-
-    const lines = extractDiffLines(change.value);
-    if (change.added) {
-      for (const line of lines) {
-        rows.push({
-          right: {
-            lineNumber: rightLineNumber,
-            text: line
-          }
-        });
-        rightLineNumber += 1;
-      }
-      continue;
-    }
-
-    if (change.removed) {
-      for (const line of lines) {
-        rows.push({
-          left: {
-            lineNumber: leftLineNumber,
-            text: line
-          }
-        });
-        leftLineNumber += 1;
-      }
-      continue;
-    }
-
-    for (const line of lines) {
-      rows.push({
-        left: {
-          lineNumber: leftLineNumber,
-          text: line
-        },
-        right: {
-          lineNumber: rightLineNumber,
-          text: line
-        }
-      });
-      leftLineNumber += 1;
-      rightLineNumber += 1;
-    }
-  }
-
-  return rows;
-}
-
-function mergePairRows(
-  rows: readonly CanonicalRow[],
-  pairRows: readonly PairAlignmentRow[],
-  previousLineCount: number,
-  currentIndex: number
-): CanonicalRow[] {
-  const documentCount = rows[0]?.entries.length ?? currentIndex + 1;
-  const previousIndex = currentIndex - 1;
-  const { gaps, lineRows } = splitRowsByPreviousDocument(rows, previousIndex, previousLineCount);
-  const additionsByGap = Array.from({ length: previousLineCount + 1 }, () => [] as CanonicalEntry[]);
-  const matchedByPreviousLine = new Map<number, CanonicalEntry>();
-
-  let gapIndex = 0;
-  for (const pairRow of pairRows) {
-    if (!pairRow.left && pairRow.right) {
-      additionsByGap[gapIndex].push(pairRow.right);
-      continue;
-    }
-
-    if (pairRow.left) {
-      if (pairRow.right) {
-        matchedByPreviousLine.set(pairRow.left.lineNumber, pairRow.right);
-      }
-      gapIndex = pairRow.left.lineNumber;
-    }
-  }
-
-  const merged: CanonicalRow[] = [];
-  for (let currentGapIndex = 0; currentGapIndex < gaps.length; currentGapIndex += 1) {
-    const existingGapRows = gaps[currentGapIndex];
-    const additions = additionsByGap[currentGapIndex];
-    const gapRowCount = Math.max(existingGapRows.length, additions.length);
-
-    for (let offset = 0; offset < gapRowCount; offset += 1) {
-      const row = existingGapRows[offset] ?? { entries: createEntries(documentCount) };
-      row.entries[currentIndex] = additions[offset];
-      merged.push(row);
-    }
-
-    if (currentGapIndex < previousLineCount) {
-      const previousLineNumber = currentGapIndex + 1;
-      const row = lineRows[previousLineNumber];
-      if (!row) {
-        throw new Error(`Missing aligned row for line ${previousLineNumber} while building session alignment.`);
-      }
-
-      row.entries[currentIndex] = matchedByPreviousLine.get(previousLineNumber);
-      merged.push(row);
-    }
-  }
-
-  return merged;
-}
-
-function splitRowsByPreviousDocument(
-  rows: readonly CanonicalRow[],
-  previousIndex: number,
-  previousLineCount: number
-): {
-  readonly gaps: CanonicalRow[][];
-  readonly lineRows: Array<CanonicalRow | undefined>;
-} {
-  const gaps = Array.from({ length: previousLineCount + 1 }, () => [] as CanonicalRow[]);
-  const lineRows = new Array<CanonicalRow | undefined>(previousLineCount + 1);
-  let gapIndex = 0;
-
-  for (const row of rows) {
-    const previousEntry = row.entries[previousIndex];
-    if (!previousEntry) {
-      gaps[gapIndex].push({
-        entries: [...row.entries]
-      });
-      continue;
-    }
-
-    lineRows[previousEntry.lineNumber] = {
-      entries: [...row.entries]
-    };
-    gapIndex = previousEntry.lineNumber;
-  }
-
-  return {
-    gaps,
-    lineRows
-  };
-}
-
 function buildChangeFromPrevious(previousEntry: CanonicalEntry | undefined, currentEntry: CanonicalEntry | undefined): AlignedLineChange | undefined {
   if (!previousEntry && !currentEntry) {
     return undefined;
@@ -498,14 +281,6 @@ function bucketizeAge(timestamp: number | undefined, now = Date.now()): number {
     return 3;
   }
   return 4;
-}
-
-function createEntries(length: number, activeIndex?: number, entry?: CanonicalEntry): Array<CanonicalEntry | undefined> {
-  const entries = Array.from({ length }, () => undefined as CanonicalEntry | undefined);
-  if (activeIndex !== undefined && entry) {
-    entries[activeIndex] = entry;
-  }
-  return entries;
 }
 
 function splitDocumentLines(text: string): string[] {

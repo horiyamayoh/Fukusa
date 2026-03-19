@@ -144,7 +144,9 @@ export class BlameDecorationController implements vscode.Disposable {
         }
 
         const lineNumber = binding.lineNumberSpace === 'globalRow'
-          ? row.rowNumber
+          ? binding.projectedLineMap
+            ? binding.projectedLineMap.globalRowToDocumentLine.get(row.rowNumber)
+            : row.rowNumber
           : cell.originalLineNumber;
         if (lineNumber === undefined) {
           return [];

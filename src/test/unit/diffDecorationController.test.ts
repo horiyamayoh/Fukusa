@@ -3,9 +3,10 @@ import * as vscode from 'vscode';
 
 import { NWayCompareSession, RepoContext } from '../../adapters/common/types';
 import { RepositoryRegistry } from '../../application/repositoryRegistry';
+import { createProjectedLineMap } from '../../application/sessionRowProjection';
 import { SessionAlignmentService } from '../../application/sessionAlignmentService';
 import { UriFactory } from '../../infrastructure/fs/uriFactory';
-import { buildRevisionDecorationModels } from '../../presentation/native/diffDecorationController';
+import { buildRevisionDecorationModels, mapRevisionDecorationsToDocumentLines } from '../../presentation/native/diffDecorationController';
 
 suite('Unit: DiffDecorationController', () => {
   test('builds edge markers for all visible adjacent pairs and detailed highlights for the active pair', () => {
@@ -40,6 +41,58 @@ suite('Unit: DiffDecorationController', () => {
     assert.deepStrictEqual(models.get(1)?.previousPairEdges.map((entry) => entry.range.start.line), [0]);
     assert.deepStrictEqual(models.get(2)?.previousPairEdges.map((entry) => entry.range.start.line), [0]);
   });
+
+  test('supports base-oriented active pair highlighting for non-adjacent columns', () => {
+    const alignment = new SessionAlignmentService().buildState([
+      createSource(0, 'A', 'one\ntwo'),
+      createSource(1, 'B', 'one\ntwo'),
+      createSource(2, 'C', 'one\nTHREE')
+    ]);
+
+    const session = createSession(alignment, 'base');
+    const models = buildRevisionDecorationModels(session, 0, 2, '0:2');
+
+    assert.deepStrictEqual(models.get(0)?.nextPairEdges.map((entry) => entry.range.start.line), [1]);
+    assert.strictEqual(models.get(1)?.modifiedLines.length ?? 0, 0);
+    assert.deepStrictEqual(models.get(2)?.previousPairEdges.map((entry) => entry.range.start.line), [1]);
+    assert.deepStrictEqual(models.get(0)?.modifiedLines.map((entry) => entry.range.start.line), [1]);
+    assert.deepStrictEqual(models.get(2)?.modifiedLines.map((entry) => entry.range.start.line), [1]);
+  });
+
+  test('builds edge markers for every visible pair in all mode', () => {
+    const alignment = new SessionAlignmentService().buildState([
+      createSource(0, 'A', 'one\ntwo'),
+      createSource(1, 'B', 'one\nTWO'),
+      createSource(2, 'C', 'one\nTHREE')
+    ]);
+
+    const session = createSession(alignment, 'all');
+    const models = buildRevisionDecorationModels(session, 0, 2, '1:2');
+
+    assert.deepStrictEqual(models.get(0)?.nextPairEdges.map((entry) => entry.range.start.line), [1]);
+    assert.deepStrictEqual(models.get(1)?.previousPairEdges.map((entry) => entry.range.start.line), [1]);
+    assert.deepStrictEqual(models.get(1)?.nextPairEdges.map((entry) => entry.range.start.line), [1]);
+    assert.deepStrictEqual(models.get(2)?.previousPairEdges.map((entry) => entry.range.start.line), [1]);
+  });
+
+  test('maps whole-line and intraline decorations through projected document rows', () => {
+    const projectedLineMap = createProjectedLineMap([2, 4]);
+    const mapped = mapRevisionDecorationsToDocumentLines({
+      previousPairEdges: [newWholeLineDecoration(2), newWholeLineDecoration(3)],
+      nextPairEdges: [],
+      addedLines: [],
+      removedLines: [],
+      modifiedLines: [newWholeLineDecoration(4)],
+      addedText: [{
+        range: new vscode.Range(3, 1, 3, 3)
+      }],
+      removedText: []
+    }, projectedLineMap);
+
+    assert.deepStrictEqual(mapped.previousPairEdges.map((entry) => entry.range.start.line), [0]);
+    assert.deepStrictEqual(mapped.modifiedLines.map((entry) => entry.range.start.line), [1]);
+    assert.deepStrictEqual(mapped.addedText.map((entry) => [entry.range.start.line, entry.range.start.character, entry.range.end.character]), [[1, 1, 3]]);
+  });
 });
 
 function createSource(revisionIndex: number, revisionId: string, text: string) {
@@ -54,7 +107,10 @@ function createSource(revisionIndex: number, revisionId: string, text: string) {
   };
 }
 
-function createSession(alignment: ReturnType<SessionAlignmentService['buildState']>): NWayCompareSession {
+function createSession(
+  alignment: ReturnType<SessionAlignmentService['buildState']>,
+  pairProjectionMode: 'adjacent' | 'base' | 'all' = 'adjacent'
+): NWayCompareSession {
   const uriFactory = new UriFactory(new RepositoryRegistry());
   const repo: RepoContext = {
     kind: 'git',
@@ -78,8 +134,13 @@ function createSession(alignment: ReturnType<SessionAlignmentService['buildState
     rawSnapshots: alignment.rawSnapshots,
     globalRows: alignment.globalRows,
     adjacentPairs: alignment.adjacentPairs,
-    activeRevisionIndex: 1,
-    activePairKey: '1:2',
-    pageStart: 0
+    pairProjection: { mode: pairProjectionMode },
+    surfaceMode: 'native'
+  };
+}
+
+function newWholeLineDecoration(lineNumber: number): vscode.DecorationOptions {
+  return {
+    range: new vscode.Range(lineNumber - 1, 0, lineNumber - 1, 0)
   };
 }

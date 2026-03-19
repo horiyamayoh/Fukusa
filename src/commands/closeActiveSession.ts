@@ -1,15 +1,13 @@
-import * as vscode from 'vscode';
-
 import { CommandContext } from './commandContext';
+import { getSessionTargetOrNotify, SessionCommandTarget } from './shared';
 
-export function createCloseActiveSessionCommand(context: CommandContext): () => Promise<void> {
-  return async () => {
-    const session = context.sessionService.getActiveBrowserSession();
+export function createCloseActiveSessionCommand(context: CommandContext): (target?: SessionCommandTarget) => Promise<void> {
+  return async (target) => {
+    const session = getSessionTargetOrNotify(context, target);
     if (!session) {
-      void vscode.window.showInformationMessage('No active Fukusa session.');
       return;
     }
 
-    await context.nativeCompareSessionController.closeActiveSession();
+    await context.compareSessionController.closeSession(session.id);
   };
 }

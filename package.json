@@ -37,12 +37,18 @@
   ],
   "activationEvents": [
     "onCommand:multidiff.browseRevisions",
+    "onCommand:multidiff.browseRevisionsSingleTab",
+    "onCommand:multidiff.changePairProjection",
     "onCommand:multidiff.closeActiveSession",
+    "onCommand:multidiff.expandAllCollapsedGaps",
     "onCommand:multidiff.openActiveSessionSnapshot",
     "onCommand:multidiff.openActiveSessionPairDiff",
+    "onCommand:multidiff.resetExpandedGaps",
     "onCommand:multidiff.shiftWindowLeft",
     "onCommand:multidiff.shiftWindowRight",
+    "onCommand:multidiff.switchCompareSurface",
     "onCommand:multidiff.toggleBlameHeatmap",
+    "onCommand:multidiff.toggleCollapseUnchanged",
     "onCommand:multidiff.cache.warmCurrentFile",
     "onCommand:multidiff.cache.clearCurrentRepo",
     "onCommand:multidiff.cache.clearAll",
@@ -59,34 +65,74 @@
         "category": "Fukusa"
       },
       {
+        "command": "multidiff.browseRevisionsSingleTab",
+        "title": "Fukusa: Browse Revisions (Single-Tab)",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.changePairProjection",
+        "title": "Fukusa: Change Pair Projection",
+        "category": "Fukusa",
+        "enablement": "multidiff.canChangePairProjection"
+      },
+      {
         "command": "multidiff.closeActiveSession",
         "title": "Fukusa: Close Active Session",
-        "category": "Fukusa"
+        "category": "Fukusa",
+        "enablement": "multidiff.hasActiveSession"
+      },
+      {
+        "command": "multidiff.expandAllCollapsedGaps",
+        "title": "Fukusa: Expand All Collapsed Gaps",
+        "category": "Fukusa",
+        "enablement": "multidiff.collapseUnchangedActive && multidiff.hasCollapsedGaps"
       },
       {
         "command": "multidiff.openActiveSessionSnapshot",
         "title": "Fukusa: Open Active Session Snapshot",
-        "category": "Fukusa"
+        "category": "Fukusa",
+        "enablement": "multidiff.hasActiveSnapshot"
       },
       {
         "command": "multidiff.openActiveSessionPairDiff",
         "title": "Fukusa: Open Active Session Pair Diff",
-        "category": "Fukusa"
+        "category": "Fukusa",
+        "enablement": "multidiff.hasActivePair"
       },
       {
         "command": "multidiff.shiftWindowLeft",
         "title": "Fukusa: Shift Window Left",
-        "category": "Fukusa"
+        "category": "Fukusa",
+        "enablement": "multidiff.canShiftWindowLeft"
       },
       {
         "command": "multidiff.shiftWindowRight",
         "title": "Fukusa: Shift Window Right",
-        "category": "Fukusa"
+        "category": "Fukusa",
+        "enablement": "multidiff.canShiftWindowRight"
+      },
+      {
+        "command": "multidiff.resetExpandedGaps",
+        "title": "Fukusa: Reset Expanded Gaps",
+        "category": "Fukusa",
+        "enablement": "multidiff.collapseUnchangedActive && multidiff.hasExpandedGaps"
+      },
+      {
+        "command": "multidiff.switchCompareSurface",
+        "title": "Fukusa: Switch Compare Surface",
+        "category": "Fukusa",
+        "enablement": "multidiff.hasActiveSession"
       },
       {
         "command": "multidiff.toggleBlameHeatmap",
         "title": "Fukusa: Toggle Blame Heatmap",
         "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.toggleCollapseUnchanged",
+        "title": "Fukusa: Toggle Collapse Unchanged",
+        "category": "Fukusa",
+        "enablement": "multidiff.hasActiveSession"
       },
       {
         "command": "multidiff.cache.warmCurrentFile",
@@ -102,9 +148,172 @@
         "command": "multidiff.cache.clearAll",
         "title": "Fukusa: Clear All Cache",
         "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.revealSession",
+        "title": "Reveal Session",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.changePairProjection",
+        "title": "Change Pair Projection",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.closeSession",
+        "title": "Close Session",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.expandAllCollapsedGaps",
+        "title": "Expand All Collapsed Gaps",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.openSessionPairDiff",
+        "title": "Open Session Pair Diff",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.openSessionSnapshot",
+        "title": "Open Session Snapshot",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.resetExpandedGaps",
+        "title": "Reset Expanded Gaps",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.shiftWindowLeft",
+        "title": "Shift Window Left",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.shiftWindowRight",
+        "title": "Shift Window Right",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.switchCompareSurface",
+        "title": "Switch Compare Surface",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.toggleCollapseUnchanged",
+        "title": "Toggle Collapse Unchanged",
+        "category": "Fukusa"
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "multidiff.internal.revealSession",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.changePairProjection",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.closeSession",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.expandAllCollapsedGaps",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.openSessionPairDiff",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.openSessionSnapshot",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.resetExpandedGaps",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.shiftWindowLeft",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.shiftWindowRight",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.switchCompareSurface",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.toggleCollapseUnchanged",
+          "when": "false"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "multidiff.internal.revealSession",
+          "group": "inline@1",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/"
+        },
+        {
+          "command": "multidiff.internal.switchCompareSurface",
+          "group": "inline@2",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/"
+        },
+        {
+          "command": "multidiff.internal.closeSession",
+          "group": "inline@3",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/"
+        },
+        {
+          "command": "multidiff.internal.changePairProjection",
+          "group": "navigation@1",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/ && viewItem =~ /(^| )pair-projectable( |$)/"
+        },
+        {
+          "command": "multidiff.internal.openSessionSnapshot",
+          "group": "navigation@1.1",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/ && viewItem =~ /(^| )has-active-snapshot( |$)/"
+        },
+        {
+          "command": "multidiff.internal.openSessionPairDiff",
+          "group": "navigation@1.2",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/ && viewItem =~ /(^| )has-active-pair( |$)/"
+        },
+        {
+          "command": "multidiff.internal.toggleCollapseUnchanged",
+          "group": "navigation@2",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/"
+        },
+        {
+          "command": "multidiff.internal.shiftWindowLeft",
+          "group": "navigation@2.1",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/ && viewItem =~ /(^| )can-shift-window-left( |$)/"
+        },
+        {
+          "command": "multidiff.internal.shiftWindowRight",
+          "group": "navigation@2.2",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/ && viewItem =~ /(^| )can-shift-window-right( |$)/"
+        },
+        {
+          "command": "multidiff.internal.expandAllCollapsedGaps",
+          "group": "navigation@3",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/ && viewItem =~ /(^| )collapse-active( |$)/ && viewItem =~ /(^| )has-collapsed-gaps( |$)/"
+        },
+        {
+          "command": "multidiff.internal.resetExpandedGaps",
+          "group": "navigation@4",
+          "when": "view == multidiff.sessions && viewItem =~ /(^| )session( |$)/ && viewItem =~ /(^| )collapse-active( |$)/ && viewItem =~ /(^| )has-expanded-gaps( |$)/"
+        },
+        {
+          "command": "multidiff.internal.openSessionSnapshot",
+          "group": "inline@1",
+          "when": "view == multidiff.sessions && viewItem == snapshot"
+        }
+      ],
       "explorer/context": [
         {
           "command": "multidiff.browseRevisions",

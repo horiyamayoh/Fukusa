@@ -1,16 +1,22 @@
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-import { CompareSourceDocument, NWayCompareSession, ResolvedResource, RevisionRef } from '../adapters/common/types';
+import { ComparePairProjection, CompareSourceDocument, CompareSurfaceMode, NWayCompareSession, ResolvedResource, RevisionRef } from '../adapters/common/types';
 import { createShadowTreeCacheKey, createSnapshotCacheKey } from '../infrastructure/cache/cacheKeys';
 import { UriFactory } from '../infrastructure/fs/uriFactory';
 import { ShadowWorkspaceService } from '../infrastructure/shadow/shadowWorkspaceService';
 import { OutputLogger } from '../util/output';
 import { BlameService } from './blameService';
 import { CacheService } from './cacheService';
+import { normalizePairProjection } from './comparePairing';
 import { RepositoryService } from './repositoryService';
 import { SessionAlignmentService } from './sessionAlignmentService';
 import { SessionService } from './sessionService';
+
+export interface SessionBuildOptions {
+  readonly pairProjection?: ComparePairProjection;
+  readonly surfaceMode?: CompareSurfaceMode;
+}
 
 export class SessionBuilderService {
   public constructor(
@@ -24,10 +30,16 @@ export class SessionBuilderService {
     private readonly output: OutputLogger
   ) {}
 
-  public async createSession(resource: ResolvedResource, revisions: readonly RevisionRef[]): Promise<NWayCompareSession> {
+  public async createSession(
+    resource: ResolvedResource,
+    revisions: readonly RevisionRef[],
+    options: SessionBuildOptions = {}
+  ): Promise<NWayCompareSession> {
     const sessionId = uuidv4();
     const sources = await this.loadDocuments(resource, revisions);
     const alignment = this.alignmentService.buildState(sources);
+    const pairProjection = normalizePairProjection(options.pairProjection, alignment.rawSnapshots.length);
+    const surfaceMode = options.surfaceMode ?? 'native';
 
     const session: NWayCompareSession = {
       id: sessionId,
@@ -41,9 +53,8 @@ export class SessionBuilderService {
       rawSnapshots: alignment.rawSnapshots,
       globalRows: alignment.globalRows,
       adjacentPairs: alignment.adjacentPairs,
-      activeRevisionIndex: 0,
-      activePairKey: alignment.adjacentPairs[0]?.key,
-      pageStart: 0
+      pairProjection,
+      surfaceMode
     };
 
     this.output.info(`Built compare session ${session.id} for ${path.posix.basename(resource.relativePath)}.`);

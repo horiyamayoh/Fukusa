@@ -1,5 +1,6 @@
 import { CommandContext } from './commandContext';
 import { openSession, resolveTargetResource } from './shared';
+import { createPresetPairProjection } from '../application/comparePairing';
 
 export function createOpenSessionBaseCommand(context: CommandContext): () => Promise<void> {
   return async () => {
@@ -8,6 +9,6 @@ export function createOpenSessionBaseCommand(context: CommandContext): () => Pro
       return;
     }
 
-    await openSession(context, resource);
+    await openSession(context, resource, createPresetPairProjection('base'));
   };
 }

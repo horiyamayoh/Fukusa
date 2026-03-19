@@ -1,22 +1,18 @@
-import * as vscode from 'vscode';
-
 import { CommandContext } from './commandContext';
+import * as vscode from 'vscode';
+import { getSnapshotTargetOrNotify, SessionSnapshotCommandTarget } from './shared';
 
-export function createOpenActiveSessionSnapshotCommand(context: CommandContext): () => Promise<void> {
-  return async () => {
-    const session = context.sessionService.getActiveBrowserSession();
-    if (!session) {
-      void vscode.window.showInformationMessage('No active Fukusa session.');
+export function createOpenActiveSessionSnapshotCommand(
+  context: CommandContext
+): (target?: SessionSnapshotCommandTarget) => Promise<void> {
+  return async (target) => {
+    const activeSnapshot = getSnapshotTargetOrNotify(context, target);
+    if (!activeSnapshot) {
       return;
     }
 
-    const snapshot = context.sessionService.getActiveSnapshot(session);
-    if (!snapshot) {
-      void vscode.window.showInformationMessage('No active revision in the current Fukusa session.');
-      return;
-    }
-
-    const textDocument = await vscode.workspace.openTextDocument(snapshot.rawUri);
+    context.sessionService.setActiveRevision(activeSnapshot.session.id, activeSnapshot.snapshot.revisionIndex);
+    const textDocument = await vscode.workspace.openTextDocument(activeSnapshot.snapshot.rawUri);
     await vscode.window.showTextDocument(textDocument, { preview: false, viewColumn: vscode.ViewColumn.Active });
   };
 }

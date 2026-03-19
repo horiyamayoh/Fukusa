@@ -143,4 +143,36 @@ suite('Unit: SessionAlignmentService', () => {
     assert.strictEqual(state.rawSnapshots.length, 3);
     assert.deepStrictEqual(state.adjacentPairs.map((pair) => pair.changedRowNumbers), [[2], [2]]);
   });
+
+  test('aligns inserted lines inside replacement hunks around the most similar surviving line', () => {
+    const service = createService();
+    const state = service.buildState([
+      createSource(0, 'A', 'const x = 1;\nreturn x;'),
+      createSource(1, 'B', 'const x = 1;\nconst y = 2;\nreturn x + y;'),
+      createSource(2, 'C', 'const x = 1;\nconst y = 2;\nreturn x + y + 1;')
+    ]);
+
+    assert.strictEqual(state.rowCount, 3);
+    assert.deepStrictEqual(state.globalRows.map((row) => row.cells.map((cell) => ({ present: cell.present, text: cell.text }))), [
+      [
+        { present: true, text: 'const x = 1;' },
+        { present: true, text: 'const x = 1;' },
+        { present: true, text: 'const x = 1;' }
+      ],
+      [
+        { present: false, text: '' },
+        { present: true, text: 'const y = 2;' },
+        { present: true, text: 'const y = 2;' }
+      ],
+      [
+        { present: true, text: 'return x;' },
+        { present: true, text: 'return x + y;' },
+        { present: true, text: 'return x + y + 1;' }
+      ]
+    ]);
+
+    assert.strictEqual(state.globalRows[1].cells[0].nextChange?.kind, 'added');
+    assert.strictEqual(state.globalRows[2].cells[1].prevChange?.kind, 'modified');
+    assert.strictEqual(state.globalRows[2].cells[2].prevChange?.kind, 'modified');
+  });
 });

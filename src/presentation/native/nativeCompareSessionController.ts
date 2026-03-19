@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 import { SessionFileBinding, NWayCompareSession } from '../../adapters/common/types';
 import { MAX_VISIBLE_REVISIONS, SessionService } from '../../application/sessionService';
+import { buildSessionViewport, getSessionVisibleWindow } from '../../application/sessionViewport';
 import { UriFactory } from '../../infrastructure/fs/uriFactory';
 import { OutputLogger } from '../../util/output';
 import { DiffDecorationController } from './diffDecorationController';
@@ -13,8 +14,14 @@ interface SessionTabState {
   readonly trackedUriKeys: ReadonlySet<string>;
 }
 
+interface RenderSessionOptions {
+  readonly existingTabsAlreadyClosed?: boolean;
+  readonly restoreTopGlobalRow?: number;
+}
+
 export class NativeCompareSessionController implements vscode.Disposable {
   private nextRenderGeneration = 0;
+  private decorationRefreshScheduled = false;
   private readonly sessionTabs = new Map<string, SessionTabState>();
   private readonly trackedUriOwners = new Map<string, string>();
   private readonly internalCloseKeys = new Set<string>();
@@ -45,16 +52,13 @@ export class NativeCompareSessionController implements vscode.Disposable {
         void this.handleTabChanges(event);
       }),
       this.sessionService.onDidChangeSessions(() => {
-        const session = this.sessionService.getActiveBrowserSession();
-        if (!session) {
-          this.editorSyncController.clear();
-          this.diffDecorationController.refresh();
-          return;
-        }
-
-        const renderGeneration = this.sessionTabs.get(session.id)?.renderGeneration ?? 0;
-        this.editorSyncController.setSession(session, this.sessionService.getVisibleWindow(session), renderGeneration);
-        this.diffDecorationController.refresh();
+        this.handleSessionsChange();
+      }),
+      this.sessionService.onDidChangeSessionViewState((sessionId) => {
+        void this.handleSessionViewStateChange(sessionId);
+      }),
+      this.sessionService.onDidChangeSessionProjection((sessionId) => {
+        void this.handleSessionProjectionChange(sessionId);
       })
     );
   }
@@ -71,7 +75,21 @@ export class NativeCompareSessionController implements vscode.Disposable {
       return;
     }
 
-    await this.openSession(session);
+    this.sessionService.setActiveBrowserSession(session.id);
+    const activeRevisionIndex = this.sessionService.getSessionViewState(session.id).activeRevisionIndex;
+    const binding = this.sessionService.getVisibleWindowBinding(session.id, activeRevisionIndex)
+      ?? this.sessionService.getVisibleWindowBindings(session.id)[0];
+    if (!binding) {
+      await this.openSession(session);
+      return;
+    }
+
+    const document = await vscode.workspace.openTextDocument(binding.documentUri);
+    await vscode.window.showTextDocument(document, {
+      preview: false,
+      preserveFocus: false,
+      viewColumn: vscode.ViewColumn.Active
+    });
   }
 
   public async shiftWindow(delta: number): Promise<void> {
@@ -81,25 +99,40 @@ export class NativeCompareSessionController implements vscode.Disposable {
       return;
     }
 
-    const maxStart = Math.max(0, session.rawSnapshots.length - MAX_VISIBLE_REVISIONS);
-    const nextPageStart = Math.max(0, Math.min(session.pageStart + delta, maxStart));
-    if (nextPageStart === session.pageStart) {
-      return;
+    await this.shiftSessionWindow(session.id, delta);
+  }
+
+  public async shiftSessionWindow(sessionId: string, delta: number): Promise<boolean> {
+    const session = this.sessionService.getBrowserSession(sessionId);
+    if (!session || session.surfaceMode !== 'native') {
+      return false;
     }
 
+    const viewState = this.sessionService.getSessionViewState(session.id);
+    const maxStart = Math.max(0, session.rawSnapshots.length - MAX_VISIBLE_REVISIONS);
+    const nextPageStart = Math.max(0, Math.min(viewState.pageStart + delta, maxStart));
+    if (nextPageStart === viewState.pageStart) {
+      return false;
+    }
+
+    const restoreTopGlobalRow = this.captureTopVisibleGlobalRow(session.id);
     const closed = await this.closeTrackedTabs(session.id);
     if (!closed) {
       this.output.warn(`Cancelled window shift for session ${session.id} because the existing tabs could not be closed.`);
-      return;
+      return false;
     }
 
     this.unregisterSessionTabs(session.id);
     const shifted = this.sessionService.shiftWindow(session.id, delta, MAX_VISIBLE_REVISIONS);
     if (!shifted) {
-      return;
+      return false;
     }
 
-    await this.renderSession(shifted, true);
+    await this.renderSession(shifted, {
+      existingTabsAlreadyClosed: true,
+      restoreTopGlobalRow
+    });
+    return true;
   }
 
   public async closeActiveSession(): Promise<void> {
@@ -109,14 +142,27 @@ export class NativeCompareSessionController implements vscode.Disposable {
       return;
     }
 
-    const closed = await this.closeTrackedTabs(session.id);
+    const closed = await this.closeSessionSurface(session.id);
     if (!closed) {
       this.output.warn(`Cancelled close for session ${session.id} because one or more tabs remained open.`);
       return;
     }
 
-    this.unregisterSessionTabs(session.id);
     this.sessionService.removeSession(session.id);
+  }
+
+  public async closeSessionSurface(sessionId: string): Promise<boolean> {
+    const closed = await this.closeTrackedTabs(sessionId);
+    if (!closed) {
+      return false;
+    }
+
+    this.unregisterSessionTabs(sessionId);
+    if (this.sessionService.getActiveBrowserSession()?.id === sessionId) {
+      this.editorSyncController.clear();
+      this.diffDecorationController.refresh();
+    }
+    return true;
   }
 
   public dispose(): void {
@@ -125,7 +171,11 @@ export class NativeCompareSessionController implements vscode.Disposable {
     }
   }
 
-  private async renderSession(session: NWayCompareSession, existingTabsAlreadyClosed = false): Promise<void> {
+  private async renderSession(session: NWayCompareSession, options: RenderSessionOptions = {}): Promise<void> {
+    const existingTabsAlreadyClosed = options.existingTabsAlreadyClosed ?? false;
+    const restoreTopGlobalRow = options.restoreTopGlobalRow
+      ?? (!existingTabsAlreadyClosed ? this.captureTopVisibleGlobalRow(session.id) : undefined);
+
     if (!existingTabsAlreadyClosed) {
       const closed = await this.closeTrackedTabs(session.id);
       if (!closed) {
@@ -136,27 +186,41 @@ export class NativeCompareSessionController implements vscode.Disposable {
       this.unregisterSessionTabs(session.id);
     }
 
-    const visibleWindow = this.sessionService.getVisibleWindow(session, MAX_VISIBLE_REVISIONS);
+    let viewState = this.sessionService.getSessionViewState(session.id);
+    const visibleWindow = getSessionVisibleWindow(session, viewState, MAX_VISIBLE_REVISIONS);
     if (visibleWindow.rawSnapshots.length === 0) {
       return;
     }
 
     if (
-      session.activeRevisionIndex < visibleWindow.startRevisionIndex
-      || session.activeRevisionIndex > visibleWindow.endRevisionIndex
+      viewState.activeRevisionIndex < visibleWindow.startRevisionIndex
+      || viewState.activeRevisionIndex > visibleWindow.endRevisionIndex
     ) {
       this.sessionService.setActiveRevision(session.id, visibleWindow.startRevisionIndex);
+      viewState = this.sessionService.getSessionViewState(session.id);
     }
 
     const activeRevisionIndex = this.sessionService.getActiveSnapshot(session)?.revisionIndex ?? visibleWindow.startRevisionIndex;
     const renderGeneration = ++this.nextRenderGeneration;
-    const compareBindings = visibleWindow.rawSnapshots.map((snapshot) => this.toCompareBinding(session, visibleWindow.startRevisionIndex, snapshot.revisionIndex));
+    const rowProjectionState = this.sessionService.getRowProjectionState(session.id);
+    const viewport = buildSessionViewport(session, viewState, rowProjectionState, MAX_VISIBLE_REVISIONS);
+    const compareBindings = visibleWindow.rawSnapshots.map((snapshot) => (
+      this.toCompareBinding(
+        session,
+        visibleWindow.startRevisionIndex,
+        snapshot.revisionIndex,
+        viewport.documentGlobalRowNumbers,
+        viewport.documentLineMap
+      )
+    ));
 
     await this.editorLayoutController.setLayout(visibleWindow.rawSnapshots.length);
     this.sessionService.replaceVisibleWindowBindings(session.id, compareBindings);
 
+    const openedDocumentUris: vscode.Uri[] = [];
     for (const [index, binding] of compareBindings.entries()) {
       const document = await vscode.workspace.openTextDocument(binding.documentUri);
+      openedDocumentUris.push(document.uri);
       await vscode.window.showTextDocument(document, {
         viewColumn: toViewColumn(index),
         preview: false,
@@ -164,10 +228,85 @@ export class NativeCompareSessionController implements vscode.Disposable {
       });
     }
 
-    this.trackSessionTabs(session.id, compareBindings.map((binding) => binding.documentUri), renderGeneration);
+    // If VS Code normalized any URIs, register additional bindings under the canonical URIs
+    // so that tab tracking and scroll sync can find them.
+    const additionalBindings: SessionFileBinding[] = [];
+    for (const [index, binding] of compareBindings.entries()) {
+      const actualUriKey = openedDocumentUris[index].toString(true);
+      const bindingUriKey = binding.documentUri.toString(true);
+      if (actualUriKey !== bindingUriKey) {
+        additionalBindings.push({ ...binding, documentUri: openedDocumentUris[index] });
+      }
+    }
+    if (additionalBindings.length > 0) {
+      this.sessionService.replaceVisibleWindowBindings(session.id, [...compareBindings, ...additionalBindings]);
+    }
+
+    this.trackSessionTabs(session.id, openedDocumentUris, renderGeneration);
     this.editorSyncController.setSession(session, visibleWindow, renderGeneration);
+    if (restoreTopGlobalRow !== undefined) {
+      this.editorSyncController.restoreTopGlobalRow(session.id, restoreTopGlobalRow, renderGeneration, visibleWindow.startRevisionIndex);
+    }
     this.diffDecorationController.refresh();
     this.output.info(`Opened native compare session ${session.id} with ${visibleWindow.rawSnapshots.length} revisions.`);
+  }
+
+  private handleSessionsChange(): void {
+    const session = this.sessionService.getActiveBrowserSession();
+    if (!session || session.surfaceMode !== 'native') {
+      this.editorSyncController.clear();
+      this.diffDecorationController.refresh();
+      return;
+    }
+
+    const renderGeneration = this.sessionTabs.get(session.id)?.renderGeneration ?? 0;
+    this.editorSyncController.setSession(session, this.sessionService.getVisibleWindow(session), renderGeneration);
+    this.diffDecorationController.refresh();
+  }
+
+  private async handleSessionViewStateChange(sessionId: string): Promise<void> {
+    if (!this.sessionTabs.has(sessionId)) {
+      return;
+    }
+
+    const session = this.sessionService.getBrowserSession(sessionId);
+    if (!session || session.surfaceMode !== 'native' || this.sessionService.getActiveBrowserSession()?.id !== sessionId) {
+      return;
+    }
+
+    const trackedWindowStart = this.getTrackedWindowStart(sessionId);
+    const visibleWindow = this.sessionService.getVisibleWindow(session, MAX_VISIBLE_REVISIONS);
+    if (trackedWindowStart !== undefined && trackedWindowStart !== visibleWindow.startRevisionIndex) {
+      await this.renderSession(session);
+      return;
+    }
+
+    this.refreshDecorations();
+  }
+
+  private refreshDecorations(): void {
+    if (this.decorationRefreshScheduled) {
+      return;
+    }
+
+    this.decorationRefreshScheduled = true;
+    queueMicrotask(() => {
+      this.decorationRefreshScheduled = false;
+      this.diffDecorationController.refresh();
+    });
+  }
+
+  private async handleSessionProjectionChange(sessionId: string): Promise<void> {
+    if (!this.sessionTabs.has(sessionId)) {
+      return;
+    }
+
+    const session = this.sessionService.getBrowserSession(sessionId);
+    if (!session || session.surfaceMode !== 'native') {
+      return;
+    }
+
+    await this.renderSession(session);
   }
 
   private async handleTabChanges(event: vscode.TabChangeEvent): Promise<void> {
@@ -270,7 +409,7 @@ export class NativeCompareSessionController implements vscode.Disposable {
   }
 
   private trackSessionTabs(sessionId: string, uris: readonly vscode.Uri[], renderGeneration: number): void {
-    this.unregisterSessionTabs(sessionId);
+    this.forgetSessionTabs(sessionId);
 
     const trackedUriKeys = new Set(uris.map((uri) => uri.toString(true)));
     this.sessionTabs.set(sessionId, {
@@ -284,8 +423,12 @@ export class NativeCompareSessionController implements vscode.Disposable {
   }
 
   private unregisterSessionTabs(sessionId: string): void {
-    const tracked = this.sessionTabs.get(sessionId);
     this.sessionService.clearVisibleWindowBindings(sessionId);
+    this.forgetSessionTabs(sessionId);
+  }
+
+  private forgetSessionTabs(sessionId: string): void {
+    const tracked = this.sessionTabs.get(sessionId);
     if (!tracked) {
       return;
     }
@@ -299,7 +442,64 @@ export class NativeCompareSessionController implements vscode.Disposable {
     this.sessionTabs.delete(sessionId);
   }
 
-  private toCompareBinding(session: NWayCompareSession, windowStart: number, revisionIndex: number): SessionFileBinding {
+  private captureTopVisibleGlobalRow(sessionId: string): number | undefined {
+    const editor = this.findTrackedEditor(sessionId);
+    if (!editor) {
+      return undefined;
+    }
+
+    const binding = this.sessionService.getSessionFileBinding(editor.document.uri);
+    if (!binding || binding.sessionId !== sessionId || binding.lineNumberSpace !== 'globalRow') {
+      return undefined;
+    }
+
+    const topDocumentLine = editor.visibleRanges[0]?.start.line;
+    if (topDocumentLine === undefined) {
+      return 1;
+    }
+
+    return binding.projectedLineMap?.documentLineToGlobalRow.get(topDocumentLine + 1) ?? topDocumentLine + 1;
+  }
+
+  private getTrackedWindowStart(sessionId: string): number | undefined {
+    const editor = this.findTrackedEditor(sessionId);
+    if (!editor) {
+      return undefined;
+    }
+
+    return this.sessionService.getSessionFileBinding(editor.document.uri)?.windowStart;
+  }
+
+  private findTrackedEditor(sessionId: string): vscode.TextEditor | undefined {
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor && this.isTrackedEditor(sessionId, activeEditor)) {
+      return activeEditor;
+    }
+
+    return vscode.window.visibleTextEditors.find((editor) => this.isTrackedEditor(sessionId, editor));
+  }
+
+  private isTrackedEditor(sessionId: string, editor: vscode.TextEditor): boolean {
+    const tracked = this.sessionTabs.get(sessionId);
+    if (!tracked) {
+      return false;
+    }
+
+    const binding = this.sessionService.getSessionFileBinding(editor.document.uri);
+    if (!binding || binding.sessionId !== sessionId || binding.lineNumberSpace !== 'globalRow') {
+      return false;
+    }
+
+    return tracked.trackedUriKeys.has(editor.document.uri.toString(true));
+  }
+
+  private toCompareBinding(
+    session: NWayCompareSession,
+    windowStart: number,
+    revisionIndex: number,
+    projectedGlobalRows: readonly number[],
+    projectedLineMap: SessionFileBinding['projectedLineMap']
+  ): SessionFileBinding {
     const snapshot = session.rawSnapshots[revisionIndex];
     const documentUri = this.uriFactory.createSessionDocumentUri(
       session.id,
@@ -317,7 +517,9 @@ export class NativeCompareSessionController implements vscode.Disposable {
       rawUri: snapshot.rawUri,
       documentUri,
       lineNumberSpace: 'globalRow',
-      windowStart
+      windowStart,
+      projectedGlobalRows,
+      projectedLineMap
     };
   }
 }

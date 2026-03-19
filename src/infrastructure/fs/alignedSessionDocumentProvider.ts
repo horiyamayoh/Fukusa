@@ -27,9 +27,15 @@ export class AlignedSessionDocumentProvider implements vscode.TextDocumentConten
       this.output.warn(`Session document path mismatch for ${uri.toString()}; rendering ${snapshot.relativePath} from the active session.`);
     }
 
-    return session.globalRows
-      .map((row) => {
-        const cell = row.cells[parsed.revisionIndex];
+    const binding = this.sessionService.getSessionFileBinding(uri);
+    const renderedRowNumbers = binding?.lineNumberSpace === 'globalRow' && binding.projectedGlobalRows && binding.projectedGlobalRows.length > 0
+      ? binding.projectedGlobalRows
+      : session.globalRows.map((row) => row.rowNumber);
+
+    return renderedRowNumbers
+      .map((rowNumber) => {
+        const row = session.globalRows[rowNumber - 1];
+        const cell = row?.cells[parsed.revisionIndex];
         return cell?.present ? cell.text : '';
       })
       .join('\n');

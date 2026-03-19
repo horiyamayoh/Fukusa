@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { CompareSourceDocument, NWayCompareSession, RepoContext } from '../../adapters/common/types';
 import { RepositoryRegistry } from '../../application/repositoryRegistry';
 import { SessionAlignmentService } from '../../application/sessionAlignmentService';
+import { createProjectedLineMap } from '../../application/sessionRowProjection';
 import { SessionService } from '../../application/sessionService';
 import { UriFactory } from '../../infrastructure/fs/uriFactory';
 import { AlignedSessionDocumentProvider } from '../../infrastructure/fs/alignedSessionDocumentProvider';
@@ -32,6 +33,35 @@ suite('Unit: AlignedSessionDocumentProvider', () => {
     assert.strictEqual(first.split('\n').length, session.rowCount);
     assert.strictEqual(second.split('\n').length, session.rowCount);
     assert.strictEqual(third.split('\n').length, session.rowCount);
+  });
+
+  test('renders only projected global rows for native compare bindings', () => {
+    const alignment = new SessionAlignmentService().buildState([
+      createSource(0, 'A', 'one\ntwo\nthree\nfour'),
+      createSource(1, 'B', 'one\ntwo\nthree\nfour')
+    ]);
+    const session = createSession(alignment);
+    const sessionService = new SessionService();
+    sessionService.createBrowserSession(session);
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    const provider = new AlignedSessionDocumentProvider(sessionService, uriFactory, new OutputLogger('AlignedSessionDocumentProvider Test'));
+    const compareUri = uriFactory.createSessionDocumentUri(session.id, 0, 0, 'src/sample.ts', 'A');
+    sessionService.replaceVisibleWindowBindings(session.id, [{
+      sessionId: session.id,
+      revisionIndex: 0,
+      revisionId: 'A',
+      relativePath: 'src/sample.ts',
+      rawUri: session.rawSnapshots[0].rawUri,
+      documentUri: compareUri,
+      lineNumberSpace: 'globalRow',
+      windowStart: 0,
+      projectedGlobalRows: [2, 4],
+      projectedLineMap: createProjectedLineMap([2, 4])
+    }]);
+
+    const projected = provider.provideTextDocumentContent(compareUri);
+
+    assert.deepStrictEqual(projected.split('\n'), ['two', 'four']);
   });
 });
 
@@ -71,8 +101,7 @@ function createSession(alignment: ReturnType<SessionAlignmentService['buildState
     rawSnapshots: alignment.rawSnapshots,
     globalRows: alignment.globalRows,
     adjacentPairs: alignment.adjacentPairs,
-    activeRevisionIndex: 0,
-    activePairKey: '0:1',
-    pageStart: 0
+    pairProjection: { mode: 'adjacent' },
+    surfaceMode: 'native'
   };
 }

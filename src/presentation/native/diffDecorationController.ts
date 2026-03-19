@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
 
-import { AdjacentPairOverlay, GlobalRowCell, IntralineSegment, NWayCompareSession } from '../../adapters/common/types';
+import { ComparePairOverlay, IntralineSegment, NWayCompareSession, SessionProjectedLineMap } from '../../adapters/common/types';
+import { getPairOverlay, getVisiblePairOverlays } from '../../application/comparePairing';
 import { SessionService } from '../../application/sessionService';
+import { buildIntralineDiff } from '../../application/sessionAlignmentService';
+import { buildSessionViewport } from '../../application/sessionViewport';
 
 interface RevisionDecorations {
   readonly previousPairEdges: vscode.DecorationOptions[];
@@ -59,12 +62,15 @@ export class DiffDecorationController implements vscode.Disposable {
       return;
     }
 
-    const visibleWindow = this.sessionService.getVisibleWindow(session);
-    const decorationsByRevision = buildRevisionDecorationModels(
+    const viewport = buildSessionViewport(
       session,
-      visibleWindow.startRevisionIndex,
-      visibleWindow.endRevisionIndex,
-      this.sessionService.getActivePair(session)?.key
+      this.sessionService.getSessionViewState(session.id),
+      this.sessionService.getRowProjectionState(session.id)
+    );
+    const decorationsByRevision = buildRevisionDecorationModelsForViewport(
+      session,
+      viewport.visiblePairs,
+      viewport.activePair
     );
 
     for (const editor of vscode.window.visibleTextEditors) {
@@ -73,7 +79,7 @@ export class DiffDecorationController implements vscode.Disposable {
         !binding
         || binding.sessionId !== session.id
         || binding.lineNumberSpace !== 'globalRow'
-        || binding.windowStart !== visibleWindow.startRevisionIndex
+        || binding.windowStart !== viewport.visibleWindow.startRevisionIndex
       ) {
         continue;
       }
@@ -83,13 +89,14 @@ export class DiffDecorationController implements vscode.Disposable {
         continue;
       }
 
-      editor.setDecorations(this.previousPairEdgeType!, decorations.previousPairEdges);
-      editor.setDecorations(this.nextPairEdgeType!, decorations.nextPairEdges);
-      editor.setDecorations(this.addedLineType!, decorations.addedLines);
-      editor.setDecorations(this.removedLineType!, decorations.removedLines);
-      editor.setDecorations(this.modifiedLineType!, decorations.modifiedLines);
-      editor.setDecorations(this.addedTextType!, decorations.addedText);
-      editor.setDecorations(this.removedTextType!, decorations.removedText);
+      const mappedDecorations = mapRevisionDecorationsToDocumentLines(decorations, binding.projectedLineMap);
+      editor.setDecorations(this.previousPairEdgeType!, mappedDecorations.previousPairEdges);
+      editor.setDecorations(this.nextPairEdgeType!, mappedDecorations.nextPairEdges);
+      editor.setDecorations(this.addedLineType!, mappedDecorations.addedLines);
+      editor.setDecorations(this.removedLineType!, mappedDecorations.removedLines);
+      editor.setDecorations(this.modifiedLineType!, mappedDecorations.modifiedLines);
+      editor.setDecorations(this.addedTextType!, mappedDecorations.addedText);
+      editor.setDecorations(this.removedTextType!, mappedDecorations.removedText);
     }
   }
 
@@ -182,18 +189,27 @@ export function buildRevisionDecorationModels(
   endRevisionIndex: number,
   activePairKey: string | undefined
 ): Map<number, RevisionDecorations> {
+  const visiblePairs = getVisiblePairOverlays(session, {
+    startRevisionIndex,
+    endRevisionIndex,
+    rawSnapshots: session.rawSnapshots.slice(startRevisionIndex, endRevisionIndex + 1)
+  });
+  const activePair = activePairKey ? getPairOverlay(session, activePairKey) : undefined;
+
+  return buildRevisionDecorationModelsForViewport(session, visiblePairs, activePair);
+}
+
+export function buildRevisionDecorationModelsForViewport(
+  session: NWayCompareSession,
+  visiblePairs: readonly ComparePairOverlay[],
+  activePair: ComparePairOverlay | undefined
+): Map<number, RevisionDecorations> {
   const decorationsByRevision = new Map<number, RevisionDecorations>();
 
-  for (const row of session.globalRows) {
-    for (let revisionIndex = startRevisionIndex; revisionIndex <= endRevisionIndex; revisionIndex += 1) {
-      const cell = row.cells[revisionIndex];
-      pushPairEdgeDecorations(decorationsByRevision, startRevisionIndex, endRevisionIndex, revisionIndex, cell);
-    }
+  for (const pair of visiblePairs) {
+    collectPairEdgeDecorations(pair, decorationsByRevision);
   }
 
-  const activePair = session.adjacentPairs.find((pair) => (
-    pair.key === activePairKey && pairIsVisible(pair, startRevisionIndex, endRevisionIndex)
-  ));
   if (activePair) {
     collectActivePairDecorations(session, activePair, decorationsByRevision);
   }
@@ -201,25 +217,22 @@ export function buildRevisionDecorationModels(
   return decorationsByRevision;
 }
 
-function pushPairEdgeDecorations(
-  decorationsByRevision: Map<number, RevisionDecorations>,
-  startRevisionIndex: number,
-  endRevisionIndex: number,
-  revisionIndex: number,
-  cell: GlobalRowCell
+function collectPairEdgeDecorations(
+  pair: ComparePairOverlay,
+  decorationsByRevision: Map<number, RevisionDecorations>
 ): void {
-  const decorations = getOrCreateDecorations(decorationsByRevision, revisionIndex);
-  if (revisionIndex > startRevisionIndex && cell.prevChange) {
-    decorations.previousPairEdges.push(toWholeLineDecoration(cell.rowNumber));
-  }
-  if (revisionIndex < endRevisionIndex && cell.nextChange) {
-    decorations.nextPairEdges.push(toWholeLineDecoration(cell.rowNumber));
+  const leftDecorations = getOrCreateDecorations(decorationsByRevision, pair.leftRevisionIndex);
+  const rightDecorations = getOrCreateDecorations(decorationsByRevision, pair.rightRevisionIndex);
+
+  for (const rowNumber of pair.changedRowNumbers) {
+    pushWholeLineDecoration(leftDecorations.nextPairEdges, rowNumber);
+    pushWholeLineDecoration(rightDecorations.previousPairEdges, rowNumber);
   }
 }
 
 function collectActivePairDecorations(
   session: NWayCompareSession,
-  pair: AdjacentPairOverlay,
+  pair: ComparePairOverlay,
   decorationsByRevision: Map<number, RevisionDecorations>
 ): void {
   for (const rowNumber of pair.changedRowNumbers) {
@@ -234,20 +247,22 @@ function collectActivePairDecorations(
     if (leftCell.present) {
       const leftDecorations = getOrCreateDecorations(decorationsByRevision, pair.leftRevisionIndex);
       if (!rightCell.present) {
-        leftDecorations.removedLines.push(toWholeLineDecoration(leftCell.rowNumber));
+        pushWholeLineDecoration(leftDecorations.removedLines, leftCell.rowNumber);
       } else if (leftCell.text !== rightCell.text) {
-        leftDecorations.modifiedLines.push(toWholeLineDecoration(leftCell.rowNumber));
-        pushIntralineDecorations(leftDecorations.removedText, leftCell.rowNumber, leftCell.nextChange?.intralineSegments);
+        const intraline = buildIntralineDiff(leftCell.text, rightCell.text);
+        pushWholeLineDecoration(leftDecorations.modifiedLines, leftCell.rowNumber);
+        pushIntralineDecorations(leftDecorations.removedText, leftCell.rowNumber, intraline.left);
       }
     }
 
     if (rightCell.present) {
       const rightDecorations = getOrCreateDecorations(decorationsByRevision, pair.rightRevisionIndex);
       if (!leftCell.present) {
-        rightDecorations.addedLines.push(toWholeLineDecoration(rightCell.rowNumber));
+        pushWholeLineDecoration(rightDecorations.addedLines, rightCell.rowNumber);
       } else if (leftCell.text !== rightCell.text) {
-        rightDecorations.modifiedLines.push(toWholeLineDecoration(rightCell.rowNumber));
-        pushIntralineDecorations(rightDecorations.addedText, rightCell.rowNumber, rightCell.prevChange?.intralineSegments);
+        const intraline = buildIntralineDiff(leftCell.text, rightCell.text);
+        pushWholeLineDecoration(rightDecorations.modifiedLines, rightCell.rowNumber);
+        pushIntralineDecorations(rightDecorations.addedText, rightCell.rowNumber, intraline.right);
       }
     }
   }
@@ -306,6 +321,53 @@ function toWholeLineDecoration(lineNumber: number): vscode.DecorationOptions {
   };
 }
 
-function pairIsVisible(pair: AdjacentPairOverlay, startRevisionIndex: number, endRevisionIndex: number): boolean {
-  return pair.leftRevisionIndex >= startRevisionIndex && pair.rightRevisionIndex <= endRevisionIndex;
+function pushWholeLineDecoration(target: vscode.DecorationOptions[], lineNumber: number): void {
+  if (target.some((entry) => entry.range.start.line === lineNumber - 1)) {
+    return;
+  }
+
+  target.push(toWholeLineDecoration(lineNumber));
+}
+
+export function mapRevisionDecorationsToDocumentLines(
+  decorations: RevisionDecorations,
+  projectedLineMap: SessionProjectedLineMap | undefined
+): RevisionDecorations {
+  if (!projectedLineMap) {
+    return decorations;
+  }
+
+  return {
+    previousPairEdges: mapDecorationOptions(decorations.previousPairEdges, projectedLineMap),
+    nextPairEdges: mapDecorationOptions(decorations.nextPairEdges, projectedLineMap),
+    addedLines: mapDecorationOptions(decorations.addedLines, projectedLineMap),
+    removedLines: mapDecorationOptions(decorations.removedLines, projectedLineMap),
+    modifiedLines: mapDecorationOptions(decorations.modifiedLines, projectedLineMap),
+    addedText: mapDecorationOptions(decorations.addedText, projectedLineMap),
+    removedText: mapDecorationOptions(decorations.removedText, projectedLineMap)
+  };
+}
+
+function mapDecorationOptions(
+  decorations: readonly vscode.DecorationOptions[],
+  projectedLineMap: SessionProjectedLineMap
+): vscode.DecorationOptions[] {
+  return decorations.flatMap((decoration) => {
+    const documentLineNumber = projectedLineMap.globalRowToDocumentLine.get(decoration.range.start.line + 1);
+    if (documentLineNumber === undefined) {
+      return [];
+    }
+
+    const startCharacter = decoration.range.start.character;
+    const endCharacter = decoration.range.end.character;
+    return [{
+      ...decoration,
+      range: new vscode.Range(
+        documentLineNumber - 1,
+        startCharacter,
+        documentLineNumber - 1,
+        endCharacter
+      )
+    }];
+  });
 }

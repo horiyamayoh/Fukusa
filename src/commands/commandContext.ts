@@ -6,7 +6,7 @@ import { RevisionPickerService } from '../application/revisionPickerService';
 import { SessionBuilderService } from '../application/sessionBuilderService';
 import { SessionService } from '../application/sessionService';
 import { UriFactory } from '../infrastructure/fs/uriFactory';
-import { NativeCompareSessionController } from '../presentation/native/nativeCompareSessionController';
+import { CompareSurfaceCoordinator } from '../presentation/compare/compareSurfaceCoordinator';
 import { OutputLogger } from '../util/output';
 
 export interface CommandContext {
@@ -17,7 +17,7 @@ export interface CommandContext {
   readonly compatibilityService: LanguageFeatureCompatibilityService;
   readonly sessionBuilderService: SessionBuilderService;
   readonly sessionService: SessionService;
-  readonly nativeCompareSessionController: NativeCompareSessionController;
+  readonly compareSessionController: CompareSurfaceCoordinator;
   readonly cacheService: CacheService;
   readonly blameDecorationController: BlameDecorationController;
 }

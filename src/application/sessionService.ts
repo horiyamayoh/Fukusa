@@ -1,14 +1,25 @@
 import * as vscode from 'vscode';
 
 import {
-  AdjacentPairOverlay,
+  ComparePairOverlay,
+  ComparePairProjection,
+  CompareSurfaceMode,
   NWayCompareSession,
   RawSnapshot,
+  SessionRowProjectionState,
+  SessionViewState,
   SessionFileBinding,
   VisibleRevisionWindow
 } from '../adapters/common/types';
-
-export const MAX_VISIBLE_REVISIONS = 9;
+import { deriveActivePairKey, getPairOverlay, normalizePairProjection } from './comparePairing';
+import {
+  buildSessionViewport,
+  createInitialSessionViewState,
+  getSessionActivePair,
+  getSessionVisibleWindow,
+  MAX_VISIBLE_REVISIONS
+} from './sessionViewport';
+export { MAX_VISIBLE_REVISIONS } from './sessionViewport';
 
 function normalizedPathKey(uri: vscode.Uri): string {
   return uri.toString(true);
@@ -17,11 +28,19 @@ function normalizedPathKey(uri: vscode.Uri): string {
 export class SessionService {
   private readonly sessions = new Map<string, NWayCompareSession>();
   private readonly onDidChangeSessionsEmitter = new vscode.EventEmitter<void>();
+  private readonly onDidChangeSessionViewStateEmitter = new vscode.EventEmitter<string>();
+  private readonly onDidChangeSessionProjectionEmitter = new vscode.EventEmitter<string>();
+  private readonly onDidChangeSessionPresentationEmitter = new vscode.EventEmitter<string>();
   private readonly fileBindings = new Map<string, SessionFileBinding>();
+  private readonly viewStates = new Map<string, SessionViewState>();
+  private readonly rowProjectionStates = new Map<string, { collapseUnchanged: boolean; expandedGapKeys: Set<string> }>();
   private activeSessionId: string | undefined;
   private readonly maxSessions: number;
 
   public readonly onDidChangeSessions = this.onDidChangeSessionsEmitter.event;
+  public readonly onDidChangeSessionViewState = this.onDidChangeSessionViewStateEmitter.event;
+  public readonly onDidChangeSessionProjection = this.onDidChangeSessionProjectionEmitter.event;
+  public readonly onDidChangeSessionPresentation = this.onDidChangeSessionPresentationEmitter.event;
 
   public constructor(maxSessions = 20) {
     this.maxSessions = Math.max(1, maxSessions);
@@ -38,6 +57,11 @@ export class SessionService {
     }
 
     this.sessions.set(session.id, session);
+    this.viewStates.set(session.id, createInitialSessionViewState(session));
+    this.rowProjectionStates.set(session.id, {
+      collapseUnchanged: false,
+      expandedGapKeys: new Set<string>()
+    });
     this.activeSessionId = session.id;
     this.indexSessionSnapshots(session);
     this.onDidChangeSessionsEmitter.fire();
@@ -86,6 +110,8 @@ export class SessionService {
     }
 
     this.removeBindings((binding) => binding.sessionId === id);
+    this.viewStates.delete(id);
+    this.rowProjectionStates.delete(id);
 
     this.sessions.delete(id);
     if (this.activeSessionId === id) {
@@ -107,6 +133,25 @@ export class SessionService {
     return this.fileBindings.get(normalizedPathKey(uri));
   }
 
+  public getSessionViewState(sessionId: string): SessionViewState {
+    const viewState = this.viewStates.get(sessionId);
+    return viewState ?? {
+      activeRevisionIndex: 0,
+      activePairKey: undefined,
+      pageStart: 0
+    };
+  }
+
+  public getVisibleWindowBindings(sessionId: string): readonly SessionFileBinding[] {
+    return [...this.fileBindings.values()]
+      .filter((binding) => binding.sessionId === sessionId && binding.lineNumberSpace === 'globalRow')
+      .sort((left, right) => left.revisionIndex - right.revisionIndex);
+  }
+
+  public getVisibleWindowBinding(sessionId: string, revisionIndex: number): SessionFileBinding | undefined {
+    return this.getVisibleWindowBindings(sessionId).find((binding) => binding.revisionIndex === revisionIndex);
+  }
+
   public replaceVisibleWindowBindings(sessionId: string, bindings: readonly SessionFileBinding[]): void {
     this.removeBindings((binding) => binding.sessionId === sessionId && binding.lineNumberSpace === 'globalRow');
     for (const binding of bindings) {
@@ -118,106 +163,227 @@ export class SessionService {
     this.removeBindings((binding) => binding.sessionId === sessionId && binding.lineNumberSpace === 'globalRow');
   }
 
-  public getActivePair(session: NWayCompareSession): AdjacentPairOverlay | undefined {
-    const selectedKey = session.activePairKey;
-    if (selectedKey) {
-      const selected = session.adjacentPairs.find((pair) => pair.key === selectedKey);
-      if (selected) {
-        return selected;
+  public getRowProjectionState(sessionId: string): SessionRowProjectionState {
+    const state = this.rowProjectionStates.get(sessionId);
+    return {
+      collapseUnchanged: state?.collapseUnchanged ?? false,
+      expandedGapKeys: [...(state?.expandedGapKeys ?? [])]
+    };
+  }
+
+  public toggleCollapseUnchanged(sessionId: string): SessionRowProjectionState | undefined {
+    const state = this.rowProjectionStates.get(sessionId);
+    if (!state || !this.sessions.has(sessionId)) {
+      return undefined;
+    }
+
+    state.collapseUnchanged = !state.collapseUnchanged;
+    this.clearExpandedGapKeys(sessionId);
+    this.onDidChangeSessionProjectionEmitter.fire(sessionId);
+    return this.getRowProjectionState(sessionId);
+  }
+
+  public expandProjectionGap(sessionId: string, gapKey: string): SessionRowProjectionState | undefined {
+    const state = this.rowProjectionStates.get(sessionId);
+    const session = this.sessions.get(sessionId);
+    if (!state || !session || !state.collapseUnchanged) {
+      return undefined;
+    }
+
+    if (state.expandedGapKeys.has(gapKey) || !this.hasCollapsedGap(session, sessionId, gapKey, state.expandedGapKeys)) {
+      return this.getRowProjectionState(sessionId);
+    }
+
+    state.expandedGapKeys.add(gapKey);
+    this.onDidChangeSessionProjectionEmitter.fire(sessionId);
+    return this.getRowProjectionState(sessionId);
+  }
+
+  public expandAllProjectionGaps(sessionId: string): SessionRowProjectionState | undefined {
+    const state = this.rowProjectionStates.get(sessionId);
+    const session = this.sessions.get(sessionId);
+    if (!state || !session || !state.collapseUnchanged) {
+      return undefined;
+    }
+
+    const collapsedGapKeys = this.getCollapsedGapKeys(session, sessionId, state.expandedGapKeys);
+    let changed = false;
+    for (const gapKey of collapsedGapKeys) {
+      if (!state.expandedGapKeys.has(gapKey)) {
+        state.expandedGapKeys.add(gapKey);
+        changed = true;
       }
     }
 
-    const derivedPairKey = derivePairKey(session, session.activeRevisionIndex, this.getVisibleWindow(session));
-    return derivedPairKey ? session.adjacentPairs.find((pair) => pair.key === derivedPairKey) : undefined;
+    if (changed) {
+      this.onDidChangeSessionProjectionEmitter.fire(sessionId);
+    }
+
+    return this.getRowProjectionState(sessionId);
+  }
+
+  public resetExpandedProjectionGaps(sessionId: string): SessionRowProjectionState | undefined {
+    const state = this.rowProjectionStates.get(sessionId);
+    const session = this.sessions.get(sessionId);
+    if (!state || !session || !state.collapseUnchanged) {
+      return undefined;
+    }
+
+    if (state.expandedGapKeys.size === 0) {
+      return this.getRowProjectionState(sessionId);
+    }
+
+    state.expandedGapKeys.clear();
+    this.onDidChangeSessionProjectionEmitter.fire(sessionId);
+    return this.getRowProjectionState(sessionId);
+  }
+
+  public getActivePair(session: NWayCompareSession): ComparePairOverlay | undefined {
+    return getSessionActivePair(session, this.getSessionViewState(session.id), this.getVisibleWindow(session));
   }
 
   public getActiveSnapshot(session: NWayCompareSession): RawSnapshot | undefined {
+    const viewState = this.getSessionViewState(session.id);
     const maxIndex = session.rawSnapshots.length - 1;
-    const safeIndex = Math.max(0, Math.min(session.activeRevisionIndex, maxIndex));
+    const safeIndex = Math.max(0, Math.min(viewState.activeRevisionIndex, maxIndex));
     return session.rawSnapshots[safeIndex];
   }
 
   public getVisibleWindow(session: NWayCompareSession, pageSize = MAX_VISIBLE_REVISIONS): VisibleRevisionWindow {
-    const safePageSize = Math.max(1, pageSize);
-    const maxStart = Math.max(0, session.rawSnapshots.length - safePageSize);
-    const startRevisionIndex = Math.max(0, Math.min(session.pageStart, maxStart));
-    const rawSnapshots = session.rawSnapshots.slice(startRevisionIndex, startRevisionIndex + safePageSize);
-    const endRevisionIndex = rawSnapshots.length === 0
-      ? startRevisionIndex - 1
-      : startRevisionIndex + rawSnapshots.length - 1;
-
-    return {
-      startRevisionIndex,
-      endRevisionIndex,
-      rawSnapshots
-    };
+    return getSessionVisibleWindow(session, this.getSessionViewState(session.id), pageSize);
   }
 
-  public setActivePair(sessionId: string, pairKey: string): AdjacentPairOverlay | undefined {
+  public updatePairProjection(sessionId: string, pairProjection: ComparePairProjection): NWayCompareSession | undefined {
     const session = this.sessions.get(sessionId);
     if (!session) {
       return undefined;
     }
 
-    const pair = session.adjacentPairs.find((entry) => entry.key === pairKey);
+    const normalizedProjection = normalizePairProjection(pairProjection, session.rawSnapshots.length);
+    if (pairProjectionEquals(session.pairProjection, normalizedProjection)) {
+      return session;
+    }
+
+    const updatedSession: NWayCompareSession = {
+      ...session,
+      pairProjection: normalizedProjection
+    };
+    this.sessions.set(sessionId, updatedSession);
+    this.clearExpandedGapKeys(sessionId);
+    this.onDidChangeSessionProjectionEmitter.fire(sessionId);
+    return updatedSession;
+  }
+
+  public updateSurfaceMode(sessionId: string, surfaceMode: CompareSurfaceMode): NWayCompareSession | undefined {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.surfaceMode === surfaceMode) {
+      return session;
+    }
+
+    const updatedSession: NWayCompareSession = {
+      ...session,
+      surfaceMode
+    };
+    this.sessions.set(sessionId, updatedSession);
+    this.onDidChangeSessionPresentationEmitter.fire(sessionId);
+    return updatedSession;
+  }
+
+  public setActivePair(sessionId: string, pairKey: string): ComparePairOverlay | undefined {
+    const session = this.sessions.get(sessionId);
+    const viewState = this.viewStates.get(sessionId);
+    if (!session) {
+      return undefined;
+    }
+
+    const pair = getPairOverlay(session, pairKey);
     if (!pair) {
       return undefined;
     }
 
-    session.activePairKey = pair.key;
+    const activeSessionChanged = this.activeSessionId !== sessionId;
+    if (
+      viewState?.activeRevisionIndex === pair.rightRevisionIndex
+      && viewState?.activePairKey === pair.key
+      && !activeSessionChanged
+    ) {
+      return pair;
+    }
+
+    this.viewStates.set(sessionId, {
+      activeRevisionIndex: pair.rightRevisionIndex,
+      activePairKey: pair.key,
+      pageStart: viewState?.pageStart ?? 0
+    });
     this.activeSessionId = sessionId;
-    this.onDidChangeSessionsEmitter.fire();
+    this.fireSessionViewStateChange(sessionId, activeSessionChanged);
     return pair;
   }
 
   public setActiveRevision(sessionId: string, revisionIndex: number): RawSnapshot | undefined {
     const session = this.sessions.get(sessionId);
+    const viewState = this.viewStates.get(sessionId);
     if (!session) {
       return undefined;
     }
 
     const maxIndex = Math.max(0, session.rawSnapshots.length - 1);
     const activeRevisionIndex = Math.max(0, Math.min(revisionIndex, maxIndex));
-    const nextPairKey = derivePairKey(session, activeRevisionIndex, this.getVisibleWindow(session));
+    const nextPairKey = deriveActivePairKey(session, activeRevisionIndex, this.getVisibleWindow(session));
     if (
-      session.activeRevisionIndex === activeRevisionIndex
-      && session.activePairKey === nextPairKey
+      viewState?.activeRevisionIndex === activeRevisionIndex
+      && viewState?.activePairKey === nextPairKey
       && this.activeSessionId === sessionId
     ) {
       return session.rawSnapshots[activeRevisionIndex];
     }
 
-    session.activeRevisionIndex = activeRevisionIndex;
-    session.activePairKey = nextPairKey;
+    this.viewStates.set(sessionId, {
+      activeRevisionIndex,
+      activePairKey: nextPairKey,
+      pageStart: viewState?.pageStart ?? 0
+    });
+    const activeSessionChanged = this.activeSessionId !== sessionId;
     this.activeSessionId = sessionId;
-    this.onDidChangeSessionsEmitter.fire();
+    this.fireSessionViewStateChange(sessionId, activeSessionChanged);
     return session.rawSnapshots[activeRevisionIndex];
   }
 
   public shiftWindow(sessionId: string, delta: number, pageSize = MAX_VISIBLE_REVISIONS): NWayCompareSession | undefined {
     const session = this.sessions.get(sessionId);
+    const viewState = this.viewStates.get(sessionId);
     if (!session) {
       return undefined;
     }
 
-    const safePageSize = Math.max(1, pageSize);
-    const maxStart = Math.max(0, session.rawSnapshots.length - safePageSize);
-    const nextPageStart = Math.max(0, Math.min(session.pageStart + delta, maxStart));
-    if (nextPageStart === session.pageStart) {
+    if (session.surfaceMode === 'panel') {
       return session;
     }
 
-    session.pageStart = nextPageStart;
-    const visibleWindow = this.getVisibleWindow(session, safePageSize);
-    if (
-      session.activeRevisionIndex < visibleWindow.startRevisionIndex
-      || session.activeRevisionIndex > visibleWindow.endRevisionIndex
-    ) {
-      session.activeRevisionIndex = visibleWindow.startRevisionIndex;
+    const safePageSize = Math.max(1, pageSize);
+    const maxStart = Math.max(0, session.rawSnapshots.length - safePageSize);
+    const nextPageStart = Math.max(0, Math.min((viewState?.pageStart ?? 0) + delta, maxStart));
+    if (nextPageStart === (viewState?.pageStart ?? 0)) {
+      return session;
     }
-    session.activePairKey = derivePairKey(session, session.activeRevisionIndex, visibleWindow);
+
+    const currentActiveRevisionIndex = viewState?.activeRevisionIndex ?? 0;
+    const visibleWindow = getSessionVisibleWindow(session, { pageStart: nextPageStart }, safePageSize);
+    const activeRevisionIndex = (
+      currentActiveRevisionIndex < visibleWindow.startRevisionIndex
+      || currentActiveRevisionIndex > visibleWindow.endRevisionIndex
+    )
+      ? visibleWindow.startRevisionIndex
+      : currentActiveRevisionIndex;
+    this.clearExpandedGapKeys(sessionId);
+    this.viewStates.set(sessionId, {
+      activeRevisionIndex,
+      activePairKey: deriveActivePairKey(session, activeRevisionIndex, visibleWindow),
+      pageStart: nextPageStart
+    });
+    const activeSessionChanged = this.activeSessionId !== sessionId;
     this.activeSessionId = sessionId;
-    this.onDidChangeSessionsEmitter.fire();
+    this.fireSessionViewStateChange(sessionId, activeSessionChanged);
     return session;
   }
 
@@ -242,29 +408,58 @@ export class SessionService {
       }
     }
   }
+
+  private hasCollapsedGap(
+    session: NWayCompareSession,
+    sessionId: string,
+    gapKey: string,
+    expandedGapKeys: ReadonlySet<string>
+  ): boolean {
+    return this.getCollapsedGapKeys(session, sessionId, expandedGapKeys).includes(gapKey);
+  }
+
+  private getCollapsedGapKeys(
+    session: NWayCompareSession,
+    sessionId: string,
+    expandedGapKeys: ReadonlySet<string>
+  ): readonly string[] {
+    return buildSessionViewport(session, this.getSessionViewState(sessionId), {
+      collapseUnchanged: true,
+      expandedGapKeys: [...expandedGapKeys]
+    }).rowProjection.rows
+      .flatMap((row) => row.kind === 'gap' ? [row.gapKey] : []);
+  }
+
+  private clearExpandedGapKeys(sessionId: string): boolean {
+    const state = this.rowProjectionStates.get(sessionId);
+    if (!state || state.expandedGapKeys.size === 0) {
+      return false;
+    }
+
+    state.expandedGapKeys.clear();
+    return true;
+  }
+
+  private fireSessionViewStateChange(sessionId: string, activeSessionChanged: boolean): void {
+    if (activeSessionChanged) {
+      this.onDidChangeSessionsEmitter.fire();
+    }
+
+    this.onDidChangeSessionViewStateEmitter.fire(sessionId);
+  }
 }
 
-function derivePairKey(
-  session: NWayCompareSession,
-  activeRevisionIndex: number,
-  visibleWindow: VisibleRevisionWindow
-): string | undefined {
-  if (session.adjacentPairs.length === 0) {
-    return undefined;
+function pairProjectionEquals(left: ComparePairProjection, right: ComparePairProjection): boolean {
+  if (left.mode !== right.mode) {
+    return false;
   }
 
-  const rightPair = `${activeRevisionIndex}:${activeRevisionIndex + 1}`;
-  if (activeRevisionIndex < visibleWindow.endRevisionIndex && session.adjacentPairs.some((pair) => pair.key === rightPair)) {
-    return rightPair;
+  if (left.mode !== 'custom' || right.mode !== 'custom') {
+    return true;
   }
 
-  const leftPair = `${activeRevisionIndex - 1}:${activeRevisionIndex}`;
-  if (activeRevisionIndex > visibleWindow.startRevisionIndex && session.adjacentPairs.some((pair) => pair.key === leftPair)) {
-    return leftPair;
-  }
-
-  return session.adjacentPairs.find((pair) => (
-    pair.leftRevisionIndex >= visibleWindow.startRevisionIndex
-    && pair.rightRevisionIndex <= visibleWindow.endRevisionIndex
-  ))?.key;
+  const leftPairKeys = left.pairKeys ?? [];
+  const rightPairKeys = right.pairKeys ?? [];
+  return leftPairKeys.length === rightPairKeys.length
+    && leftPairKeys.every((key, index) => key === rightPairKeys[index]);
 }

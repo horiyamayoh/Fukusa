@@ -15,21 +15,28 @@ import { SessionAlignmentService } from './application/sessionAlignmentService';
 import { SessionBuilderService } from './application/sessionBuilderService';
 import { SessionService } from './application/sessionService';
 import { createBrowseRevisionsCommand } from './commands/browseRevisions';
+import { createBrowseRevisionsSingleTabCommand } from './commands/browseRevisionsSingleTab';
+import { createChangePairProjectionCommand } from './commands/changePairProjection';
 import { createClearAllCacheCommand, createClearCurrentRepoCacheCommand } from './commands/clearCache';
 import { createCloseActiveSessionCommand } from './commands/closeActiveSession';
 import { CommandContext } from './commands/commandContext';
+import { createExpandAllCollapsedGapsCommand } from './commands/expandAllCollapsedGaps';
 import { createOpenForCurrentFileCommand } from './commands/openForCurrentFile';
 import { createOpenForExplorerFileCommand } from './commands/openForExplorerFile';
 import { createOpenActiveSessionPairDiffCommand } from './commands/openActiveSessionPairDiff';
 import { createOpenActiveSessionSnapshotCommand } from './commands/openActiveSessionSnapshot';
 import { createOpenRevisionSnapshotCommand } from './commands/openRevisionSnapshot';
+import { createResetExpandedGapsCommand } from './commands/resetExpandedGaps';
 import { createOpenSessionAdjacentCommand } from './commands/openSessionAdjacent';
 import { createOpenSessionBaseCommand } from './commands/openSessionBase';
 import { createOpenSnapshotAsTempFileCommand } from './commands/openSnapshotAsTempFile';
 import { createRevealSessionCommand } from './commands/revealSession';
 import { createShiftWindowLeftCommand } from './commands/shiftWindowLeft';
 import { createShiftWindowRightCommand } from './commands/shiftWindowRight';
+import { SessionCommandContextController } from './commands/sessionCommandContextController';
+import { createSwitchCompareSurfaceCommand } from './commands/switchCompareSurface';
 import { createToggleBlameHeatmapCommand } from './commands/toggleBlameHeatmap';
+import { createToggleCollapseUnchangedCommand } from './commands/toggleCollapseUnchanged';
 import { createWarmCacheCommand } from './commands/warmCache';
 import { MemoryCache } from './infrastructure/cache/memoryCache';
 import { AlignedSessionDocumentProvider } from './infrastructure/fs/alignedSessionDocumentProvider';
@@ -40,6 +47,8 @@ import { UriFactory } from './infrastructure/fs/uriFactory';
 import { ShadowWorkspaceService } from './infrastructure/shadow/shadowWorkspaceService';
 import { TempSnapshotMirror } from './infrastructure/temp/tempSnapshotMirror';
 import { BlameDecorationController } from './presentation/decorations/blameDecorationController';
+import { CompareSurfaceCoordinator } from './presentation/compare/compareSurfaceCoordinator';
+import { PanelCompareSessionController } from './presentation/compare/panelCompareSessionController';
 import { DiffDecorationController } from './presentation/native/diffDecorationController';
 import { EditorLayoutController } from './presentation/native/editorLayoutController';
 import { EditorSyncController } from './presentation/native/editorSyncController';
@@ -73,17 +82,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const shadowWorkspaceService = new ShadowWorkspaceService(repositoryService, output);
   const tempSnapshotMirror = new TempSnapshotMirror(context.globalStorageUri, repositoryService, uriFactory, cacheService);
   const compatibilityService = new LanguageFeatureCompatibilityService(tempSnapshotMirror);
+  const blameService = new BlameService(repositoryService, cacheService);
   const sessionBuilderService = new SessionBuilderService(
     repositoryService,
     cacheService,
-    new BlameService(repositoryService, cacheService),
+    blameService,
     uriFactory,
     alignmentService,
     shadowWorkspaceService,
     sessionService,
     output
   );
-  const blameService = new BlameService(repositoryService, cacheService);
   const blameDecorationController = new BlameDecorationController(blameService, sessionService, output);
   const diffDecorationController = new DiffDecorationController(sessionService);
   const editorSyncController = new EditorSyncController(sessionService);
@@ -95,8 +104,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     editorSyncController,
     output
   );
+  const panelCompareSessionController = new PanelCompareSessionController(context.extensionUri, sessionService, output);
+  const compareSessionController = new CompareSurfaceCoordinator(
+    sessionService,
+    nativeCompareSessionController,
+    panelCompareSessionController
+  );
   const sessionsTreeProvider = new SessionsTreeProvider(sessionService);
   const cacheTreeProvider = new CacheTreeProvider(cacheService);
+  const sessionCommandContextController = new SessionCommandContextController(sessionService);
 
   const commandContext: CommandContext = {
     output,
@@ -106,7 +122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     compatibilityService,
     sessionBuilderService,
     sessionService,
-    nativeCompareSessionController,
+    compareSessionController,
     cacheService,
     blameDecorationController
   };
@@ -120,12 +136,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     diffDecorationController,
     editorSyncController,
     nativeCompareSessionController,
+    panelCompareSessionController,
+    compareSessionController,
+    sessionCommandContextController,
     vscode.workspace.registerFileSystemProvider('multidiff', snapshotFsProvider, { isReadonly: true }),
     vscode.workspace.registerTextDocumentContentProvider('multidiff-session-doc', alignedSessionDocumentProvider),
     vscode.window.registerTreeDataProvider('multidiff.sessions', sessionsTreeProvider),
     vscode.window.registerTreeDataProvider('multidiff.cache', cacheTreeProvider),
     vscode.commands.registerCommand('multidiff.browseRevisions', createBrowseRevisionsCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.browseRevisionsSingleTab', createBrowseRevisionsSingleTabCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.changePairProjection', createChangePairProjectionCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.closeActiveSession', createCloseActiveSessionCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.expandAllCollapsedGaps', createExpandAllCollapsedGapsCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openActiveSessionSnapshot', createOpenActiveSessionSnapshotCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openActiveSessionPairDiff', createOpenActiveSessionPairDiffCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openForCurrentFile', createOpenForCurrentFileCommand(commandContext)),
@@ -133,10 +155,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('multidiff.openRevisionSnapshot', createOpenRevisionSnapshotCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openSessionAdjacent', createOpenSessionAdjacentCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openSessionBase', createOpenSessionBaseCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.resetExpandedGaps', createResetExpandedGapsCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.internal.revealSession', createRevealSessionCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.changePairProjection', createChangePairProjectionCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.closeSession', createCloseActiveSessionCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.expandAllCollapsedGaps', createExpandAllCollapsedGapsCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.openSessionPairDiff', createOpenActiveSessionPairDiffCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.openSessionSnapshot', createOpenActiveSessionSnapshotCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.resetExpandedGaps', createResetExpandedGapsCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.shiftWindowLeft', createShiftWindowLeftCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.shiftWindowRight', createShiftWindowRightCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.switchCompareSurface', createSwitchCompareSurfaceCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.toggleCollapseUnchanged', createToggleCollapseUnchangedCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.shiftWindowLeft', createShiftWindowLeftCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.shiftWindowRight', createShiftWindowRightCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.switchCompareSurface', createSwitchCompareSurfaceCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.toggleBlameHeatmap', createToggleBlameHeatmapCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.toggleCollapseUnchanged', createToggleCollapseUnchangedCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.cache.warmCurrentFile', createWarmCacheCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.cache.clearCurrentRepo', createClearCurrentRepoCacheCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.cache.clearAll', createClearAllCacheCommand(commandContext)),
