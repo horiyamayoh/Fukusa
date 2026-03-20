@@ -99,6 +99,24 @@ suite('Unit: ShadowWorkspaceService', () => {
 
     await cleanupTempRepo(repoRoot);
   });
+
+  test('restores readonly permissions after writing multiple raw files into the same revision root', async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'fukusa-shadow-'));
+    const fsModule = require('fs/promises') as typeof import('fs/promises');
+    const chmodSpy = sinon.spy(fsModule, 'chmod');
+    const service = new ShadowWorkspaceService({} as RepositoryService, new OutputLogger('ShadowWorkspaceService Test'));
+    const repo = createRepo(repoRoot);
+
+    const firstRawUri = await service.writeRawFile(repo, 'rev-1', 'src/sample.ts', Buffer.from('const value = 1;\n', 'utf8'));
+    const secondRawUri = await service.writeRawFile(repo, 'rev-1', 'src/other.ts', Buffer.from('const value = 2;\n', 'utf8'));
+    const revisionRoot = path.join(repoRoot, '.fukusa-shadow', 'revisions', 'rev-1');
+
+    assert.ok(firstRawUri.fsPath.includes(`${path.sep}.fukusa-shadow${path.sep}revisions${path.sep}rev-1`));
+    assert.ok(secondRawUri.fsPath.includes(`${path.sep}.fukusa-shadow${path.sep}revisions${path.sep}rev-1`));
+    assert.ok(chmodSpy.calledWith(revisionRoot, 0o555));
+
+    await cleanupTempRepo(repoRoot);
+  });
 });
 
 class TestShadowWorkspaceService extends ShadowWorkspaceService {

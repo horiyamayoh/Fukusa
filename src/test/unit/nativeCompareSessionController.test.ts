@@ -117,6 +117,52 @@ suite('Unit: NativeCompareSessionController', () => {
     controller.dispose();
   });
 
+  test('keeps the session registered when cascading close fails after a user tab close', async () => {
+    const harness = createTabHarness();
+    stubTabGroups(harness.tabGroups);
+    stubWindowEditorsForHarness(harness);
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+
+    sinon.stub(vscode.workspace, 'openTextDocument').callsFake((async (...args: unknown[]) => {
+      const uri = args[0] as vscode.Uri;
+      return {
+        uri,
+        lineCount: 200
+      } as vscode.TextDocument;
+    }) as unknown as typeof vscode.workspace.openTextDocument);
+    sinon.stub(vscode.window, 'showTextDocument').callsFake((async (...args: unknown[]) => {
+      const document = args[0] as vscode.TextDocument;
+      return harness.open(document, args[1] as vscode.TextDocumentShowOptions | undefined);
+    }) as unknown as typeof vscode.window.showTextDocument);
+
+    harness.closeStub.callsFake(async () => false);
+
+    const output = new OutputLogger('NativeCompareSessionController Test');
+    const warnStub = sinon.stub(output, 'warn');
+    const sessionService = new SessionService();
+    const controller = new NativeCompareSessionController(
+      sessionService,
+      uriFactory,
+      new TestLayoutController(),
+      { refresh: sinon.stub(), dispose: sinon.stub() } as unknown as DiffDecorationController,
+      { setSession: sinon.stub(), clear: sinon.stub(), dispose: sinon.stub() } as unknown as EditorSyncController,
+      output
+    );
+    const session = sessionService.createBrowserSession(createSession('session-partial-close', createRevisions(2)));
+
+    await controller.openSession(session);
+    const closedTab = harness.openTabs[1];
+    harness.userClose(closedTab);
+    await flushAsyncWork();
+
+    assert.ok(sessionService.getSession(session.id));
+    assert.strictEqual(harness.openTabs.length, 1);
+    assert.strictEqual(warnStub.callCount, 1);
+    assert.match(String(warnStub.firstCall.args[0]), /Partially closed session/);
+
+    controller.dispose();
+  });
+
   test('rerenders tracked native sessions when shared row projection changes', async () => {
     const harness = createTabHarness();
     stubTabGroups(harness.tabGroups);
@@ -358,6 +404,49 @@ suite('Unit: NativeCompareSessionController', () => {
     assert.strictEqual(openTextDocumentStub.callCount, openCallsAfterRender + 1);
     assert.strictEqual(showTextDocumentStub.callCount, showCallsAfterRender + 1);
     assert.strictEqual(harness.openTabs.length, 3);
+
+    controller.dispose();
+  });
+
+  test('closes orphaned native tabs when the oldest session is evicted', async () => {
+    const harness = createTabHarness();
+    stubTabGroups(harness.tabGroups);
+    stubWindowEditorsForHarness(harness);
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+
+    sinon.stub(vscode.workspace, 'openTextDocument').callsFake((async (...args: unknown[]) => {
+      const uri = args[0] as vscode.Uri;
+      return {
+        uri,
+        lineCount: 200
+      } as vscode.TextDocument;
+    }) as unknown as typeof vscode.workspace.openTextDocument);
+    sinon.stub(vscode.window, 'showTextDocument').callsFake((async (...args: unknown[]) => {
+      const document = args[0] as vscode.TextDocument;
+      return harness.open(document, args[1] as vscode.TextDocumentShowOptions | undefined);
+    }) as unknown as typeof vscode.window.showTextDocument);
+
+    const sessionService = new SessionService(2);
+    const controller = new NativeCompareSessionController(
+      sessionService,
+      uriFactory,
+      new TestLayoutController(),
+      { refresh: sinon.stub(), dispose: sinon.stub() } as unknown as DiffDecorationController,
+      { setSession: sinon.stub(), clear: sinon.stub(), dispose: sinon.stub() } as unknown as EditorSyncController,
+      new OutputLogger('NativeCompareSessionController Test')
+    );
+
+    const firstSession = sessionService.createBrowserSession(createSession('session-evict-a', createRevisions(2)));
+    await controller.openSession(firstSession);
+    const secondSession = sessionService.createBrowserSession(createSession('session-evict-b', createRevisions(2)));
+    await controller.openSession(secondSession);
+    const thirdSession = sessionService.createBrowserSession(createSession('session-evict-c', createRevisions(2)));
+    await controller.openSession(thirdSession);
+    await flushAsyncWork();
+
+    assert.strictEqual(sessionService.getSession(firstSession.id), undefined);
+    assert.strictEqual(harness.openTabs.length, 4);
+    assert.ok(harness.openTabs.every((tab) => ((tab.input as { readonly uri: vscode.Uri }).uri.authority !== firstSession.id)));
 
     controller.dispose();
   });

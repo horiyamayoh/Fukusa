@@ -2,6 +2,10 @@
 
 Date: 2026-03-19
 
+## Status
+
+Accepted. Extends [ADR 005](adr_005_compare_pair_modes.md) with `all` and `custom` presets and memoized overlay lookup.
+
 ## Context
 
 `Adjacent` and `Base` were already represented in the session, but the representation was still too narrow:

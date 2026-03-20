@@ -12,6 +12,7 @@ const highContrastPalette = ['rgba(0,255,0,0.22)', 'rgba(173,255,47,0.24)', 'rgb
 export class BlameDecorationController implements vscode.Disposable {
   private enabled = false;
   private readonly types: vscode.TextEditorDecorationType[] = [];
+  private readonly decoratedEditors = new Set<vscode.TextEditor>();
   private readonly disposables: vscode.Disposable[] = [];
 
   public constructor(
@@ -20,15 +21,20 @@ export class BlameDecorationController implements vscode.Disposable {
     private readonly output: OutputLogger
   ) {
     this.disposables.push(
-      vscode.window.onDidChangeActiveTextEditor((editor) => {
+      vscode.window.onDidChangeActiveTextEditor(() => {
         if (this.enabled) {
-          void this.update(editor);
+          void this.refreshVisibleEditors();
+        }
+      }),
+      vscode.window.onDidChangeVisibleTextEditors(() => {
+        if (this.enabled) {
+          void this.refreshVisibleEditors();
         }
       }),
       vscode.window.onDidChangeActiveColorTheme(() => {
         if (this.enabled) {
           this.recreateDecorationTypes();
-          void this.update(vscode.window.activeTextEditor);
+          void this.refreshVisibleEditors();
         }
       })
     );
@@ -38,16 +44,16 @@ export class BlameDecorationController implements vscode.Disposable {
   public async toggle(): Promise<boolean> {
     this.enabled = !this.enabled;
     if (!this.enabled) {
-      this.clear(vscode.window.activeTextEditor);
+      this.clearDecoratedEditors();
       return false;
     }
 
-    await this.update(vscode.window.activeTextEditor);
+    await this.refreshVisibleEditors();
     return true;
   }
 
   public dispose(): void {
-    this.clear(vscode.window.activeTextEditor);
+    this.clearDecoratedEditors();
     for (const type of this.types) {
       type.dispose();
     }
@@ -82,6 +88,7 @@ export class BlameDecorationController implements vscode.Disposable {
     this.types.forEach((type, index) => {
       editor.setDecorations(type, grouped.get(index) ?? []);
     });
+    this.decoratedEditors.add(editor);
 
     this.output.info(`Applied blame heatmap to ${editor.document.uri.toString()}`);
   }
@@ -94,6 +101,30 @@ export class BlameDecorationController implements vscode.Disposable {
     for (const type of this.types) {
       editor.setDecorations(type, []);
     }
+    this.decoratedEditors.delete(editor);
+  }
+
+  private clearDecoratedEditors(): void {
+    const editorsToClear = new Set<vscode.TextEditor>([
+      ...this.decoratedEditors,
+      ...vscode.window.visibleTextEditors
+    ]);
+    for (const editor of editorsToClear) {
+      this.clear(editor);
+    }
+  }
+
+  private async refreshVisibleEditors(): Promise<void> {
+    const visibleEditors = vscode.window.visibleTextEditors;
+    const visibleEditorSet = new Set(visibleEditors);
+
+    for (const editor of [...this.decoratedEditors]) {
+      if (!visibleEditorSet.has(editor)) {
+        this.clear(editor);
+      }
+    }
+
+    await Promise.all(visibleEditors.map((editor) => this.update(editor)));
   }
 
   private recreateDecorationTypes(): void {
@@ -156,10 +187,10 @@ export class BlameDecorationController implements vscode.Disposable {
         return {
           lineNumber,
           ageBucket: cell.blameAgeBucket,
-          revision: snapshot.revisionId,
-          author: snapshot.revisionLabel,
-          summary: snapshot.relativePath,
-          timestamp: undefined
+          revision: cell.blameInfo?.revision ?? snapshot.revisionId,
+          author: cell.blameInfo?.author ?? snapshot.revisionLabel,
+          summary: cell.blameInfo?.summary ?? snapshot.relativePath,
+          timestamp: cell.blameInfo?.timestamp
         };
       })
     };

@@ -12,6 +12,7 @@ import {
   IntralineSegment,
   RawSnapshot
 } from '../adapters/common/types';
+import { bucketizeAge } from './blameService';
 import { buildCanonicalRows, CanonicalEntry, CanonicalRow } from './nWayAlignmentEngine';
 
 export class SessionAlignmentService {
@@ -87,19 +88,23 @@ export function buildIntralineDiff(
   };
 }
 
-function buildGlobalRows(rows: readonly CanonicalRow[], blameLookups: readonly Map<number, number>[]): GlobalRow[] {
+function buildGlobalRows(rows: readonly CanonicalRow[], blameLookups: readonly Map<number, BlameLineInfo>[]): GlobalRow[] {
   return rows.map((row, index) => ({
     rowNumber: index + 1,
-    cells: row.entries.map((entry, revisionIndex) => ({
-      revisionIndex,
-      rowNumber: index + 1,
-      present: entry !== undefined,
-      text: entry?.text ?? '',
-      originalLineNumber: entry?.lineNumber,
-      prevChange: revisionIndex > 0 ? buildChangeFromPrevious(row.entries[revisionIndex - 1], entry) : undefined,
-      nextChange: revisionIndex < row.entries.length - 1 ? buildChangeToNext(entry, row.entries[revisionIndex + 1]) : undefined,
-      blameAgeBucket: entry ? blameLookups[revisionIndex].get(entry.lineNumber) : undefined
-    }))
+    cells: row.entries.map((entry, revisionIndex) => {
+      const blameInfo = entry ? blameLookups[revisionIndex].get(entry.lineNumber) : undefined;
+      return {
+        revisionIndex,
+        rowNumber: index + 1,
+        present: entry !== undefined,
+        text: entry?.text ?? '',
+        originalLineNumber: entry?.lineNumber,
+        prevChange: revisionIndex > 0 ? buildChangeFromPrevious(row.entries[revisionIndex - 1], entry) : undefined,
+        nextChange: revisionIndex < row.entries.length - 1 ? buildChangeToNext(entry, row.entries[revisionIndex + 1]) : undefined,
+        blameAgeBucket: blameInfo ? bucketizeAge(blameInfo.timestamp) : undefined,
+        blameInfo
+      };
+    })
   }));
 }
 
@@ -249,38 +254,17 @@ function coalesceSegments(segments: readonly IntralineSegment[]): readonly Intra
   return merged;
 }
 
-function buildBlameLookup(lines: readonly BlameLineInfo[] | undefined): Map<number, number> {
-  const lookup = new Map<number, number>();
+function buildBlameLookup(lines: readonly BlameLineInfo[] | undefined): Map<number, BlameLineInfo> {
+  const lookup = new Map<number, BlameLineInfo>();
   if (!lines) {
     return lookup;
   }
 
   for (const line of lines) {
-    lookup.set(line.lineNumber, bucketizeAge(line.timestamp));
+    lookup.set(line.lineNumber, line);
   }
 
   return lookup;
-}
-
-function bucketizeAge(timestamp: number | undefined, now = Date.now()): number {
-  if (!timestamp) {
-    return 4;
-  }
-
-  const ageDays = (now - timestamp) / (1000 * 60 * 60 * 24);
-  if (ageDays <= 30) {
-    return 0;
-  }
-  if (ageDays <= 180) {
-    return 1;
-  }
-  if (ageDays <= 365) {
-    return 2;
-  }
-  if (ageDays <= 730) {
-    return 3;
-  }
-  return 4;
 }
 
 function splitDocumentLines(text: string): string[] {

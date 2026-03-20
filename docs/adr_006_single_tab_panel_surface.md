@@ -2,6 +2,10 @@
 
 Date: 2026-03-19
 
+## Status
+
+Accepted. Supersedes [ADR 003](adr_003_single_tab_compare_surface.md).
+
 ## Context
 
 The native-editor session remains useful, but it still inherits hard platform limits:

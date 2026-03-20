@@ -2,6 +2,10 @@
 
 Date: 2026-03-19
 
+## Status
+
+Accepted.
+
 ## Context
 
 Alignment gives Fukusa one global row space, but the product still lacked a distinct layer for deciding which rows should actually be shown.

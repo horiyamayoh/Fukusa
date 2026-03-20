@@ -73,14 +73,65 @@ Fukusa is a VS Code extension for historical N-way compare. It opens the selecte
 - The sessions tree also exposes direct session actions, so you can reveal, switch surface, or close a specific session without first making it active.
 - Snapshot commands respect `multidiff.snapshot.openMode`, so the focused historical revision opens either as a virtual `multidiff:` document or a mirrored temp file.
 - Raw historical files still live in the shadow workspace, and pair-diff escape hatches still open those `file` scheme documents directly.
+- Syntax highlighting on aligned session documents works directly, but definition / hover / references remain best-effort unless you open a mirrored temp snapshot.
+
+## Architecture
+
+Fukusa follows a layered architecture with manual dependency injection wired in `extension.ts`:
+
+```
+extension.ts                    Entry point / DI wiring
+├── commands/                   Command handlers (factory function pattern)
+├── presentation/               UI layer
+│   ├── native/                 Native editor surface (tabs, scroll sync, decorations)
+│   ├── compare/                Panel (Webview) surface
+│   ├── decorations/            Blame heatmap decorations
+│   └── views/                  Tree views (sessions, cache)
+├── application/                Business logic
+│   ├── sessionService.ts       Central session state (event-driven)
+│   ├── nWayAlignmentEngine.ts  Core N-way alignment algorithm
+│   ├── comparePairing.ts       Pair projection (adjacent/base/all/custom)
+│   └── ...
+├── infrastructure/             Cache, virtual FS, shadow workspace, temp files
+└── adapters/                   VCS adapters (Git, SVN)
+```
+
+Key design principles:
+
+- **Event-driven reactivity**: `SessionService` emits 4 event types; controllers, tree views, and context keys react.
+- **Dual surface**: Native editors (multiple tabs) and Panel (single webview) share the same compare model via `CompareSurfaceCoordinator`.
+- **Global row space**: All editors synchronize through a shared global row number space.
+- **Immutable session + mutable view state**: `NWayCompareSession` is immutable; `SessionViewState` is mutable and lives in `SessionService`.
+
+All domain types are defined in `src/adapters/common/types.ts`.
 
 ## Development
 
-```powershell
-npm run compile
-npm test
-npm run lint
-npx vsce package --pre-release
+```bash
+npm run compile        # Clear out/ and compile TypeScript
+npm test               # Run all tests (unit + integration)
+npm run test:unit      # Run unit tests only
+npm run test:integration  # Run integration tests only
+npm run lint           # ESLint
+npm run package:vsix   # Create .vsix package (pre-release)
 ```
 
-`npm run compile` clears `out/` first so stale generated tests do not survive refactors.
+- Build uses pure `tsc` (no webpack/esbuild).
+- Tests run inside a downloaded VS Code instance via `@vscode/test-electron`.
+- Unit tests: Mocha TDD style (`suite`/`test`), suite names prefixed with `Unit:`.
+- Integration tests: suite names prefixed with `Integration:`.
+- `npm run compile` clears `out/` first so stale generated files do not survive refactors.
+- For AI agent developers, see `CLAUDE.md` for a comprehensive guide.
+
+## Documentation
+
+| File | Content |
+| --- | --- |
+| `CLAUDE.md` | AI agent development guide |
+| `CHANGELOG.md` | Version history |
+| `PUBLISHING.md` | VS Code Marketplace publishing checklist |
+| `docs/SPEC.md` | Comprehensive specification (reverse-engineered) |
+| `docs/USER_GUIDE.md` | End-user guide |
+| `docs/Fukusa_design_v0.2.md` | Original design document (Native Editor First) |
+| `docs/Fukusa_nway_redesign_plan_2026-03-15.md` | N-way redesign plan |
+| `docs/adr_003_*` to `docs/adr_010_*` | Architecture Decision Records |

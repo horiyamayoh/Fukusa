@@ -71,6 +71,7 @@ export class ShadowWorkspaceService implements vscode.Disposable {
     await fs.chmod(filePath, 0o666).catch(() => undefined);
     await fs.writeFile(filePath, Buffer.from(bytes));
     await fs.chmod(filePath, 0o444).catch(() => undefined);
+    await this.markReadonlyRecursive(rootPath);
     return vscode.Uri.file(filePath);
   }
 
@@ -122,6 +123,8 @@ export class ShadowWorkspaceService implements vscode.Disposable {
 
       await fs.chmod(targetPath, 0o444).catch(() => undefined);
     }
+
+    await fs.chmod(rootPath, 0o555).catch(() => undefined);
   }
 
   private async makeWritableRecursive(rootPath: string): Promise<void> {

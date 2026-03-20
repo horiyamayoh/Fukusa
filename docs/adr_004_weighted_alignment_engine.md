@@ -2,6 +2,10 @@
 
 Date: 2026-03-19
 
+## Status
+
+Accepted.
+
 ## Context
 
 The compare surface already works as `A | B | C | ...`, but the old alignment core still had one especially harmful shortcut: when a diff hunk contained removed lines followed by added lines, it paired them by raw offset.

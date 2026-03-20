@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted for spike only.
+Superseded by [ADR 006](adr_006_single_tab_panel_surface.md).
+
+The spike prototype validated the single-tab concept; ADR 006 promoted it to a production surface.
 
 ## Context
 

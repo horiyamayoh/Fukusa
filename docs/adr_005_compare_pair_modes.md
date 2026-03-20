@@ -2,6 +2,10 @@
 
 Date: 2026-03-19
 
+## Status
+
+Accepted. Extended by [ADR 007](adr_007_pair_projection_model.md) which adds `all` and `custom` presets.
+
 ## Context
 
 Fukusa already had commands named `openSessionAdjacent` and `openSessionBase`, but both opened exactly the same session model.

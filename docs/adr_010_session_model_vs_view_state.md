@@ -2,6 +2,10 @@
 
 Date: 2026-03-19
 
+## Status
+
+Accepted.
+
 ## Context
 
 Fukusa had already split major compare concerns into pure layers:

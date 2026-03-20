@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 
 import { NWayCompareSession, RepoContext } from '../../adapters/common/types';
@@ -10,6 +11,10 @@ import { BlameDecorationController } from '../../presentation/decorations/blameD
 import { OutputLogger } from '../../util/output';
 
 suite('Unit: BlameDecorationController', () => {
+  teardown(() => {
+    sinon.restore();
+  });
+
   test('maps compare document heatmap lines to global rows', () => {
     const sessionService = new SessionService();
     const uriFactory = new UriFactory(new RepositoryRegistry());
@@ -85,6 +90,111 @@ suite('Unit: BlameDecorationController', () => {
 
     controller.dispose();
   });
+
+  test('preserves blame metadata for compare document hover content', () => {
+    const sessionService = new SessionService();
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    const session = sessionService.createBrowserSession(createSession('session-blame-metadata'));
+    const compareUri = uriFactory.createSessionDocumentUri(session.id, 0, 1, 'src/sample.ts', 'r1');
+    sessionService.replaceVisibleWindowBindings(session.id, [
+      {
+        sessionId: session.id,
+        revisionIndex: 1,
+        revisionId: 'rev-1',
+        relativePath: 'src/sample.ts',
+        rawUri: session.rawSnapshots[1].rawUri,
+        documentUri: compareUri,
+        lineNumberSpace: 'globalRow',
+        windowStart: 0
+      }
+    ]);
+
+    const controller = new BlameDecorationController(
+      {} as never,
+      sessionService,
+      new OutputLogger('BlameDecorationController Test')
+    );
+
+    const heatmap = (controller as unknown as {
+      getSessionHeatmap(editor: vscode.TextEditor): {
+        readonly lines: readonly {
+          readonly lineNumber: number;
+          readonly ageBucket: number;
+          readonly author: string;
+          readonly revision: string;
+          readonly summary?: string;
+          readonly timestamp?: number;
+        }[];
+      } | undefined;
+    }).getSessionHeatmap({
+      document: {
+        uri: compareUri
+      } as vscode.TextDocument
+    } as vscode.TextEditor);
+
+    assert.deepStrictEqual(heatmap?.lines[0], {
+      lineNumber: 1,
+      ageBucket: 1,
+      revision: 'commit-123',
+      author: 'Alice',
+      summary: 'Refine alignment',
+      timestamp: 1_700_000_000_000
+    });
+
+    controller.dispose();
+  });
+
+  test('toggles blame decorations across every visible editor and clears them on disable', async () => {
+    const sessionService = new SessionService();
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    const session = sessionService.createBrowserSession(createSession('session-blame-visible-editors'));
+    const firstCompareUri = uriFactory.createSessionDocumentUri(session.id, 0, 0, 'src/sample.ts', 'r0');
+    const secondCompareUri = uriFactory.createSessionDocumentUri(session.id, 0, 1, 'src/sample.ts', 'r1');
+    sessionService.replaceVisibleWindowBindings(session.id, [
+      {
+        sessionId: session.id,
+        revisionIndex: 0,
+        revisionId: 'rev-0',
+        relativePath: 'src/sample.ts',
+        rawUri: session.rawSnapshots[0].rawUri,
+        documentUri: firstCompareUri,
+        lineNumberSpace: 'globalRow',
+        windowStart: 0
+      },
+      {
+        sessionId: session.id,
+        revisionIndex: 1,
+        revisionId: 'rev-1',
+        relativePath: 'src/sample.ts',
+        rawUri: session.rawSnapshots[1].rawUri,
+        documentUri: secondCompareUri,
+        lineNumberSpace: 'globalRow',
+        windowStart: 0
+      }
+    ]);
+
+    const firstEditor = createEditor(firstCompareUri);
+    const secondEditor = createEditor(secondCompareUri);
+    stubWindowEditors([firstEditor, secondEditor]);
+
+    const controller = new BlameDecorationController(
+      {} as never,
+      sessionService,
+      new OutputLogger('BlameDecorationController Test')
+    );
+
+    const enabled = await controller.toggle();
+    const disabled = await controller.toggle();
+
+    assert.strictEqual(enabled, true);
+    assert.strictEqual(disabled, false);
+    assert.ok(hasAppliedDecorations(firstEditor.setDecorations as sinon.SinonSpy));
+    assert.ok(hasAppliedDecorations(secondEditor.setDecorations as sinon.SinonSpy));
+    assert.ok(hasClearedDecorations(firstEditor.setDecorations as sinon.SinonSpy));
+    assert.ok(hasClearedDecorations(secondEditor.setDecorations as sinon.SinonSpy));
+
+    controller.dispose();
+  });
 });
 
 function createSession(sessionId: string): NWayCompareSession {
@@ -124,7 +234,21 @@ function createSession(sessionId: string): NWayCompareSession {
         rowNumber: 1,
         cells: [
           { revisionIndex: 0, rowNumber: 1, present: true, text: 'a', originalLineNumber: 1, blameAgeBucket: 1 },
-          { revisionIndex: 1, rowNumber: 1, present: true, text: 'a', originalLineNumber: 1, blameAgeBucket: 1 }
+          {
+            revisionIndex: 1,
+            rowNumber: 1,
+            present: true,
+            text: 'a',
+            originalLineNumber: 1,
+            blameAgeBucket: 1,
+            blameInfo: {
+              lineNumber: 1,
+              revision: 'commit-123',
+              author: 'Alice',
+              summary: 'Refine alignment',
+              timestamp: 1_700_000_000_000
+            }
+          }
         ]
       },
       {
@@ -147,4 +271,30 @@ function createSession(sessionId: string): NWayCompareSession {
     pairProjection: { mode: 'adjacent' },
     surfaceMode: 'native'
   };
+}
+
+function createEditor(uri: vscode.Uri): vscode.TextEditor {
+  return {
+    document: { uri } as vscode.TextDocument,
+    setDecorations: sinon.spy()
+  } as unknown as vscode.TextEditor;
+}
+
+function stubWindowEditors(visibleEditors: readonly vscode.TextEditor[]): void {
+  (sinon as unknown as {
+    replaceGetter(object: object, property: string, getter: () => unknown): void;
+  }).replaceGetter(vscode.window, 'activeTextEditor', () => visibleEditors[0]);
+  (sinon as unknown as {
+    replaceGetter(object: object, property: string, getter: () => unknown): void;
+  }).replaceGetter(vscode.window, 'visibleTextEditors', () => visibleEditors);
+}
+
+function hasAppliedDecorations(setDecorations: sinon.SinonSpy): boolean {
+  return setDecorations.getCalls()
+    .some((call) => Array.isArray(call.args[1]) && call.args[1].length > 0);
+}
+
+function hasClearedDecorations(setDecorations: sinon.SinonSpy): boolean {
+  return setDecorations.getCalls()
+    .some((call) => Array.isArray(call.args[1]) && call.args[1].length === 0);
 }

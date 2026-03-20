@@ -62,6 +62,7 @@ export interface AlignedLine {
   readonly prevChange?: AlignedLineChange;
   readonly nextChange?: AlignedLineChange;
   readonly blameAgeBucket?: number;
+  readonly blameInfo?: BlameLineInfo;
 }
 
 export interface AlignedLineMap {

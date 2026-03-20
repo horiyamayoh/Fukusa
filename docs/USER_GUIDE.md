@@ -67,7 +67,9 @@
 ## Language Features
 
 - The main compare surface is a standard VS Code text editor backed by aligned session documents.
-- Syntax highlighting, definition jump, hover, font, theme, cursor, and selection behavior come from VS Code directly.
+- Syntax highlighting, font, theme, cursor, and selection behavior come from VS Code directly.
+- Definition jump, hover, and references on aligned session documents remain best-effort and depend on whether the installed language extension supports Fukusa's virtual document schemes.
+- When you need exact historical language-feature behavior from a real file path, use the snapshot escape hatch with `multidiff.snapshot.openMode = tempFile`.
 
 ## Shadow Workspace Layout
 

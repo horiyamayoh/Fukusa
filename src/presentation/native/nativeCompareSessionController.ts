@@ -52,7 +52,7 @@ export class NativeCompareSessionController implements vscode.Disposable {
         void this.handleTabChanges(event);
       }),
       this.sessionService.onDidChangeSessions(() => {
-        this.handleSessionsChange();
+        void this.handleSessionsChange();
       }),
       this.sessionService.onDidChangeSessionViewState((sessionId) => {
         void this.handleSessionViewStateChange(sessionId);
@@ -255,7 +255,9 @@ export class NativeCompareSessionController implements vscode.Disposable {
     this.output.info(`Opened native compare session ${session.id} with ${visibleWindow.rawSnapshots.length} revisions.`);
   }
 
-  private handleSessionsChange(): void {
+  private async handleSessionsChange(): Promise<void> {
+    await this.reconcileRemovedSessionTabs();
+
     const session = this.sessionService.getActiveBrowserSession();
     if (!session || session.surfaceMode !== 'native') {
       this.editorSyncController.clear();
@@ -357,12 +359,14 @@ export class NativeCompareSessionController implements vscode.Disposable {
     }
 
     const closed = await this.closeTrackedTabs(sessionId);
-    this.unregisterSessionTabs(sessionId);
-    this.sessionService.removeSession(sessionId);
-
     if (!closed) {
       this.output.warn(`Partially closed session ${sessionId}; some tabs remained open after the user closed one session tab.`);
+      this.refreshDecorations();
+      return;
     }
+
+    this.unregisterSessionTabs(sessionId);
+    this.sessionService.removeSession(sessionId);
   }
 
   private async closeTrackedTabs(sessionId: string): Promise<boolean> {
@@ -410,6 +414,22 @@ export class NativeCompareSessionController implements vscode.Disposable {
     }
 
     return tabs;
+  }
+
+  private async reconcileRemovedSessionTabs(): Promise<void> {
+    for (const sessionId of [...this.sessionTabs.keys()]) {
+      if (this.sessionService.getBrowserSession(sessionId)) {
+        continue;
+      }
+
+      const closed = await this.closeTrackedTabs(sessionId);
+      if (!closed) {
+        this.output.warn(`Failed to close orphaned native tabs for removed session ${sessionId}.`);
+        continue;
+      }
+
+      this.unregisterSessionTabs(sessionId);
+    }
   }
 
   private trackSessionTabs(sessionId: string, uris: readonly vscode.Uri[], renderGeneration: number): void {
