@@ -339,12 +339,20 @@ CompareProjectedGapRow               -- 折りたたまれたギャップ
 2. ソースエディタの topLine → グローバル行番号に変換
 3. 32ms デバウンス後、全ピアエディタに対して:
    a. グローバル行番号 → ターゲットエディタのドキュメント行に変換
-   b. editor.revealRange(targetLine, AtTop) を呼び出し
+   b. revealLineAtTop(editor, targetLine) を呼び出し
+      - VS Code の revealRange(AtTop) はスティッキースクロール有効時に
+        max(cursorSurroundingLines, stickyScroll.maxLineCount) 行分の
+        内部パディングを挿入するため、そのオフセットを加算して補正する
 4. 80ms 後に検証パスを実行:
    a. 各ターゲットのactual topLine を読み取り
-   b. 期待値と異なる場合は再度 revealRange で補正
-5. 150ms のフィードバック抑制 (reveal 起因のイベントを無視)
+   b. 期待値と異なる場合は再度 revealLineAtTop で補正
+5. 150ms のフィードバック抑制 (reveal 起因のイベントを URI 単位で無視)
 ```
+
+`onDidChangeTextEditorVisibleRanges` は topLine が変わったときしか同期源を更新できないため、
+VS Code ネイティブの `Ctrl+Up` / `Ctrl+Down` が行境界に達する前の細かいスクロール量は観測できない。
+そのため `multidiff-session-doc` では内部コマンドで `Ctrl+Up` / `Ctrl+Down` をフックし、
+まず VS Code ネイティブの `editorScroll` を実行したうえで、結果の topLine を使ってピア列だけを即時同期する。
 
 #### 4.2.2 行番号変換
 
@@ -364,7 +372,7 @@ CompareProjectedGapRow               -- 折りたたまれたギャップ
 - 同一セッション・同一ウィンドウ内のエディタのみ同期する
 - `lineNumberSpace === 'globalRow'` のバインディングのみ対象
 - ソースエディタ自身は同期対象外
-- `syncInProgress` フラグと `suppressUntil` タイムスタンプでフィードバックループを防止
+- `syncInProgress` フラグと `suppressedUris` (URI 単位のタイムスタンプ) でフィードバックループを防止
 - `lastRevealByUri` キャッシュで冗長な reveal を抑制
 
 ### 4.3 未変更行の折りたたみ
@@ -670,14 +678,15 @@ CacheService
     │ syncPeers():
     │   各ピアエディタに対して:
     │     グローバル行 → ドキュメント行変換
-    │     editor.revealRange(targetLine, AtTop)
+    │     revealLineAtTop(editor, targetLine)
+    │     (スティッキースクロールパディングを加算して補正)
     │ scheduleVerify() → 80ms タイマー設定
     │
     ▼ (80ms 後)
 [EditorSyncController] 検証コールバック
     │ 各ターゲットの実際の topLine を確認
-    │ 期待値と異なれば再度 revealRange で補正
-    │ suppressUntil = now + 150ms
+    │ 期待値と異なれば再度 revealLineAtTop で補正
+    │ suppressedUris に URI 単位で now + 150ms を設定
 ```
 
 ### 6.3 タブクローズカスケードフロー
@@ -739,7 +748,7 @@ closeSessionAfterUserTabClose(sessionId)
 
 | # | カテゴリ | 説明 | ファイル |
 |---|--------|------|---------|
-| 1 | スクロール同期 | `revealRange(AtTop)` は VS Code の API 仕様上、ピクセル単位の精度を保証しない。検証パスで補正するが、高速スクロール時にわずかなズレが残る可能性がある | `editorSyncController.ts` |
+| 1 | スクロール同期 | `revealRange(AtTop)` は VS Code の API 仕様上、ピクセル単位の精度を保証しない。検証パスで補正するが、マウス/タッチパッド/スクロールバー操作ではわずかなズレが残る可能性がある。`Ctrl+Up` / `Ctrl+Down` は内部コマンドでネイティブ `editorScroll` を実行し、その結果の topLine でピア列を即時同期して初動のズレを避ける。スティッキースクロール有効時の `revealRange(AtTop)` 内部パディングは `revealLineAtTop()` で補正済み | `editorSyncController.ts` |
 | 2 | タブカスケード | VS Code がドキュメント URI を正規化した場合、追跡 URI が不一致となりカスケードクローズが失敗する。正規化対策を追加したが、全パターンをカバーしているかは未検証 | `nativeCompareSessionController.ts` |
 | 3 | パフォーマンス | N-Way アラインメントは計算量が大きく、大規模ファイル (10,000行+) やリビジョン数が多い場合 (10+) にセッション作成が遅延する可能性がある | `nWayAlignmentEngine.ts` |
 | 4 | メモリ | `GlobalRow[]` はすべてのセルテキストをメモリに保持する。大規模ファイル×多リビジョンでメモリ消費が大きくなる | `types.ts` |

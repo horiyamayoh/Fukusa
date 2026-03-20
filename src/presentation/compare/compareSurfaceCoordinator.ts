@@ -5,6 +5,12 @@ import { SessionService } from '../../application/sessionService';
 import { NativeCompareSessionController } from '../native/nativeCompareSessionController';
 import { PanelCompareSessionController } from './panelCompareSessionController';
 
+interface SessionSurfaceController {
+  openSession(session: NWayCompareSession): Promise<void>;
+  revealSession(sessionId: string): Promise<void>;
+  closeSessionSurface(sessionId: string): Promise<boolean>;
+}
+
 export class CompareSurfaceCoordinator implements vscode.Disposable {
   public constructor(
     private readonly sessionService: SessionService,
@@ -13,12 +19,7 @@ export class CompareSurfaceCoordinator implements vscode.Disposable {
   ) {}
 
   public async openSession(session: NWayCompareSession): Promise<void> {
-    if (session.surfaceMode === 'panel') {
-      await this.panelController.openSession(session);
-      return;
-    }
-
-    await this.nativeController.openSession(session);
+    await this.openSessionOnSurface(session);
   }
 
   public async revealSession(sessionId: string): Promise<void> {
@@ -27,12 +28,7 @@ export class CompareSurfaceCoordinator implements vscode.Disposable {
       return;
     }
 
-    if (session.surfaceMode === 'panel') {
-      await this.panelController.revealSession(sessionId);
-      return;
-    }
-
-    await this.nativeController.revealSession(sessionId);
+    await this.revealSessionOnSurface(session);
   }
 
   public async closeActiveSession(): Promise<void> {
@@ -59,9 +55,7 @@ export class CompareSurfaceCoordinator implements vscode.Disposable {
       return false;
     }
 
-    const closed = session.surfaceMode === 'panel'
-      ? await this.panelController.closeSessionSurface(session.id)
-      : await this.nativeController.closeSessionSurface(session.id);
+    const closed = await this.closeSessionSurface(session);
     if (!closed) {
       return false;
     }
@@ -80,9 +74,8 @@ export class CompareSurfaceCoordinator implements vscode.Disposable {
       return true;
     }
 
-    const closed = session.surfaceMode === 'panel'
-      ? await this.panelController.closeSessionSurface(session.id)
-      : await this.nativeController.closeSessionSurface(session.id);
+    const previousSurfaceMode = session.surfaceMode;
+    const closed = await this.closeSessionSurface(session);
     if (!closed) {
       return false;
     }
@@ -92,8 +85,21 @@ export class CompareSurfaceCoordinator implements vscode.Disposable {
       return false;
     }
 
-    await this.openSession(updatedSession);
-    return true;
+    try {
+      await this.openSessionOnSurface(updatedSession);
+      return true;
+    } catch {
+      const revertedSession = this.sessionService.updateSurfaceMode(session.id, previousSurfaceMode);
+      if (revertedSession) {
+        try {
+          await this.openSessionOnSurface(revertedSession);
+        } catch {
+          // Keep the restored surface mode even if reopening the old surface also fails.
+        }
+      }
+
+      return false;
+    }
   }
 
   public async shiftWindow(delta: number): Promise<void> {
@@ -112,6 +118,10 @@ export class CompareSurfaceCoordinator implements vscode.Disposable {
     }
 
     return this.nativeController.shiftSessionWindow(session.id, delta);
+  }
+
+  public async scrollActiveEditorAligned(delta: number): Promise<boolean> {
+    return this.nativeController.scrollActiveEditorAligned(delta);
   }
 
   public toggleCollapseUnchanged(): boolean {
@@ -175,5 +185,23 @@ export class CompareSurfaceCoordinator implements vscode.Disposable {
 
   public dispose(): void {
     // Owned by the extension's top-level disposables.
+  }
+
+  private getSurfaceController(surfaceMode: CompareSurfaceMode): SessionSurfaceController {
+    return surfaceMode === 'panel'
+      ? this.panelController
+      : this.nativeController;
+  }
+
+  private async openSessionOnSurface(session: NWayCompareSession): Promise<void> {
+    await this.getSurfaceController(session.surfaceMode).openSession(session);
+  }
+
+  private async revealSessionOnSurface(session: NWayCompareSession): Promise<void> {
+    await this.getSurfaceController(session.surfaceMode).revealSession(session.id);
+  }
+
+  private async closeSessionSurface(session: NWayCompareSession): Promise<boolean> {
+    return this.getSurfaceController(session.surfaceMode).closeSessionSurface(session.id);
   }
 }

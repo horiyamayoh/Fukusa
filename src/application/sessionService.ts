@@ -15,6 +15,7 @@ import { deriveActivePairKey, getPairOverlay, normalizePairProjection } from './
 import {
   buildSessionViewport,
   createInitialSessionViewState,
+  deriveSessionSelectionViewState,
   getSessionActivePair,
   getSessionVisibleWindow,
   MAX_VISIBLE_REVISIONS
@@ -285,6 +286,10 @@ export class SessionService {
       surfaceMode
     };
     this.sessions.set(sessionId, updatedSession);
+    const viewState = this.viewStates.get(sessionId);
+    if (viewState) {
+      this.viewStates.set(sessionId, deriveSessionSelectionViewState(updatedSession, viewState));
+    }
     this.onDidChangeSessionPresentationEmitter.fire(sessionId);
     return updatedSession;
   }
@@ -302,19 +307,21 @@ export class SessionService {
     }
 
     const activeSessionChanged = this.activeSessionId !== sessionId;
+    const nextViewState = deriveSessionSelectionViewState(session, {
+      activeRevisionIndex: pair.rightRevisionIndex,
+      activePairKey: pair.key,
+      pageStart: viewState?.pageStart ?? 0
+    });
     if (
-      viewState?.activeRevisionIndex === pair.rightRevisionIndex
-      && viewState?.activePairKey === pair.key
+      viewState?.activeRevisionIndex === nextViewState.activeRevisionIndex
+      && viewState?.activePairKey === nextViewState.activePairKey
+      && viewState?.pageStart === nextViewState.pageStart
       && !activeSessionChanged
     ) {
       return pair;
     }
 
-    this.viewStates.set(sessionId, {
-      activeRevisionIndex: pair.rightRevisionIndex,
-      activePairKey: pair.key,
-      pageStart: viewState?.pageStart ?? 0
-    });
+    this.viewStates.set(sessionId, nextViewState);
     this.activeSessionId = sessionId;
     this.fireSessionViewStateChange(sessionId, activeSessionChanged);
     return pair;
@@ -329,20 +336,21 @@ export class SessionService {
 
     const maxIndex = Math.max(0, session.rawSnapshots.length - 1);
     const activeRevisionIndex = Math.max(0, Math.min(revisionIndex, maxIndex));
-    const nextPairKey = deriveActivePairKey(session, activeRevisionIndex, this.getVisibleWindow(session));
+    const nextViewState = deriveSessionSelectionViewState(session, {
+      activeRevisionIndex,
+      activePairKey: undefined,
+      pageStart: viewState?.pageStart ?? 0
+    });
     if (
-      viewState?.activeRevisionIndex === activeRevisionIndex
-      && viewState?.activePairKey === nextPairKey
+      viewState?.activeRevisionIndex === nextViewState.activeRevisionIndex
+      && viewState?.activePairKey === nextViewState.activePairKey
+      && viewState?.pageStart === nextViewState.pageStart
       && this.activeSessionId === sessionId
     ) {
       return session.rawSnapshots[activeRevisionIndex];
     }
 
-    this.viewStates.set(sessionId, {
-      activeRevisionIndex,
-      activePairKey: nextPairKey,
-      pageStart: viewState?.pageStart ?? 0
-    });
+    this.viewStates.set(sessionId, nextViewState);
     const activeSessionChanged = this.activeSessionId !== sessionId;
     this.activeSessionId = sessionId;
     this.fireSessionViewStateChange(sessionId, activeSessionChanged);

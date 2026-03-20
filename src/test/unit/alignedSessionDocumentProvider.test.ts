@@ -63,6 +63,35 @@ suite('Unit: AlignedSessionDocumentProvider', () => {
 
     assert.deepStrictEqual(projected.split('\n'), ['two', 'four']);
   });
+
+  test('renders an empty native compare document when all projected rows are collapsed away', () => {
+    const alignment = new SessionAlignmentService().buildState([
+      createSource(0, 'A', 'one\ntwo\nthree'),
+      createSource(1, 'B', 'one\ntwo\nthree')
+    ]);
+    const session = createSession(alignment);
+    const sessionService = new SessionService();
+    sessionService.createBrowserSession(session);
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+    const provider = new AlignedSessionDocumentProvider(sessionService, uriFactory, new OutputLogger('AlignedSessionDocumentProvider Test'));
+    const compareUri = uriFactory.createSessionDocumentUri(session.id, 0, 0, 'src/sample.ts', 'A');
+    sessionService.replaceVisibleWindowBindings(session.id, [{
+      sessionId: session.id,
+      revisionIndex: 0,
+      revisionId: 'A',
+      relativePath: 'src/sample.ts',
+      rawUri: session.rawSnapshots[0].rawUri,
+      documentUri: compareUri,
+      lineNumberSpace: 'globalRow',
+      windowStart: 0,
+      projectedGlobalRows: [],
+      projectedLineMap: createProjectedLineMap([])
+    }]);
+
+    const projected = provider.provideTextDocumentContent(compareUri);
+
+    assert.strictEqual(projected, '');
+  });
 });
 
 function createSource(revisionIndex: number, revisionId: string, text: string): CompareSourceDocument {

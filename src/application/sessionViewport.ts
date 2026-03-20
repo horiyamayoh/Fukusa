@@ -6,8 +6,8 @@ import {
   VisibleRevisionWindow
 } from '../adapters/common/types';
 import { CompareRowProjectionOptions, CompareRowProjectionResult } from './compareRowProjection';
-import { deriveActivePairKey, getPairOverlay, getVisiblePairKeys } from './comparePairing';
-import { buildSessionRowProjection, createProjectedLineMap } from './sessionRowProjection';
+import { deriveActivePairKey, getPairOverlay, getVisiblePairKeys, parsePairKey } from './comparePairing';
+import { buildSessionRowProjection } from './sessionRowProjection';
 
 export const MAX_VISIBLE_REVISIONS = 9;
 
@@ -77,12 +77,8 @@ export function buildSessionViewport(
   const visibleWindow = getSessionVisibleWindow(session, viewState, pageSize);
   const activePair = getSessionActivePair(session, viewState, visibleWindow);
   const sessionRowProjection = buildSessionRowProjection(session, visibleWindow, rowProjectionOptions);
-  const documentGlobalRowNumbers = sessionRowProjection.visibleDataRowNumbers.length > 0 || session.rowCount === 0
-    ? sessionRowProjection.visibleDataRowNumbers
-    : Array.from({ length: session.rowCount }, (_, index) => index + 1);
-  const documentLineMap = sessionRowProjection.visibleDataRowNumbers.length > 0 || session.rowCount === 0
-    ? sessionRowProjection.projectedLineMap
-    : createProjectedLineMap(documentGlobalRowNumbers);
+  const documentGlobalRowNumbers = sessionRowProjection.visibleDataRowNumbers;
+  const documentLineMap = sessionRowProjection.projectedLineMap;
 
   return {
     visibleWindow,
@@ -95,16 +91,23 @@ export function buildSessionViewport(
   };
 }
 
-export function createInitialSessionViewState(
-  session: Pick<NWayCompareSession, 'pairProjection' | 'rawSnapshots' | 'surfaceMode'>
+export function deriveSessionSelectionViewState(
+  session: Pick<NWayCompareSession, 'pairProjection' | 'rawSnapshots' | 'surfaceMode'>,
+  selection: Pick<SessionViewState, 'activeRevisionIndex' | 'activePairKey' | 'pageStart'>,
+  pageSize = MAX_VISIBLE_REVISIONS
 ): SessionViewState {
-  const activeRevisionIndex = 0;
-  const pageStart = 0;
-  const activePairKey = deriveActivePairKey(
-    session,
+  const maxRevisionIndex = Math.max(0, session.rawSnapshots.length - 1);
+  const activeRevisionIndex = Math.max(0, Math.min(selection.activeRevisionIndex, maxRevisionIndex));
+  const pageStart = deriveSessionPageStart(session, {
     activeRevisionIndex,
-    getSessionVisibleWindow(session, { pageStart })
-  );
+    activePairKey: selection.activePairKey,
+    pageStart: selection.pageStart
+  }, pageSize);
+  const visibleWindow = getSessionVisibleWindow(session, { pageStart }, pageSize);
+  const visiblePairKeys = getVisiblePairKeys(session.pairProjection, visibleWindow);
+  const activePairKey = selection.activePairKey && visiblePairKeys.includes(selection.activePairKey)
+    ? selection.activePairKey
+    : deriveActivePairKey(session, activeRevisionIndex, visibleWindow);
 
   return {
     activeRevisionIndex,
@@ -113,10 +116,82 @@ export function createInitialSessionViewState(
   };
 }
 
+export function createInitialSessionViewState(
+  session: Pick<NWayCompareSession, 'pairProjection' | 'rawSnapshots' | 'surfaceMode'>
+): SessionViewState {
+  return deriveSessionSelectionViewState(session, {
+    activeRevisionIndex: 0,
+    activePairKey: undefined,
+    pageStart: 0
+  });
+}
+
 function isPairVisible(
   session: Pick<NWayCompareSession, 'pairProjection'>,
   pairKey: string,
   visibleWindow: VisibleRevisionWindow
 ): boolean {
   return getVisiblePairKeys(session.pairProjection, visibleWindow).includes(pairKey);
+}
+
+function deriveSessionPageStart(
+  session: Pick<NWayCompareSession, 'rawSnapshots' | 'surfaceMode'>,
+  selection: Pick<SessionViewState, 'activeRevisionIndex' | 'activePairKey' | 'pageStart'>,
+  pageSize: number
+): number {
+  const safePageSize = Math.max(1, pageSize);
+  const maxStart = Math.max(0, session.rawSnapshots.length - safePageSize);
+  const currentPageStart = clamp(selection.pageStart, 0, maxStart);
+  if (session.surfaceMode === 'panel') {
+    return currentPageStart;
+  }
+
+  const pairRange = getVisiblePairPageRange(selection.activePairKey, safePageSize, maxStart);
+  if (pairRange) {
+    return clamp(currentPageStart, pairRange.start, pairRange.end);
+  }
+
+  const revisionRange = getVisibleRevisionPageRange(selection.activeRevisionIndex, safePageSize, maxStart);
+  return clamp(currentPageStart, revisionRange.start, revisionRange.end);
+}
+
+function getVisiblePairPageRange(
+  activePairKey: string | undefined,
+  pageSize: number,
+  maxStart: number
+): { readonly start: number; readonly end: number } | undefined {
+  if (!activePairKey) {
+    return undefined;
+  }
+
+  const parsed = parsePairKey(activePairKey);
+  if (!parsed) {
+    return undefined;
+  }
+
+  const minimumStart = Math.max(0, parsed.rightRevisionIndex - pageSize + 1);
+  const maximumStart = Math.min(parsed.leftRevisionIndex, maxStart);
+  if (minimumStart > maximumStart) {
+    return undefined;
+  }
+
+  return {
+    start: minimumStart,
+    end: maximumStart
+  };
+}
+
+function getVisibleRevisionPageRange(
+  activeRevisionIndex: number,
+  pageSize: number,
+  maxStart: number
+): { readonly start: number; readonly end: number } {
+  return {
+    start: Math.max(0, activeRevisionIndex - pageSize + 1),
+    end: Math.min(activeRevisionIndex, maxStart)
+  };
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(value, maximum));
 }

@@ -21,16 +21,11 @@ import { createClearAllCacheCommand, createClearCurrentRepoCacheCommand } from '
 import { createCloseActiveSessionCommand } from './commands/closeActiveSession';
 import { CommandContext } from './commands/commandContext';
 import { createExpandAllCollapsedGapsCommand } from './commands/expandAllCollapsedGaps';
-import { createOpenForCurrentFileCommand } from './commands/openForCurrentFile';
-import { createOpenForExplorerFileCommand } from './commands/openForExplorerFile';
 import { createOpenActiveSessionPairDiffCommand } from './commands/openActiveSessionPairDiff';
 import { createOpenActiveSessionSnapshotCommand } from './commands/openActiveSessionSnapshot';
-import { createOpenRevisionSnapshotCommand } from './commands/openRevisionSnapshot';
 import { createResetExpandedGapsCommand } from './commands/resetExpandedGaps';
-import { createOpenSessionAdjacentCommand } from './commands/openSessionAdjacent';
-import { createOpenSessionBaseCommand } from './commands/openSessionBase';
-import { createOpenSnapshotAsTempFileCommand } from './commands/openSnapshotAsTempFile';
 import { createRevealSessionCommand } from './commands/revealSession';
+import { createScrollAlignedDownCommand, createScrollAlignedUpCommand } from './commands/scrollAligned';
 import { createShiftWindowLeftCommand } from './commands/shiftWindowLeft';
 import { createShiftWindowRightCommand } from './commands/shiftWindowRight';
 import { SessionCommandContextController } from './commands/sessionCommandContextController';
@@ -38,6 +33,7 @@ import { createSwitchCompareSurfaceCommand } from './commands/switchCompareSurfa
 import { createToggleBlameHeatmapCommand } from './commands/toggleBlameHeatmap';
 import { createToggleCollapseUnchangedCommand } from './commands/toggleCollapseUnchanged';
 import { createWarmCacheCommand } from './commands/warmCache';
+import { getCacheMaxSizeMb } from './configuration/extensionConfiguration';
 import { MemoryCache } from './infrastructure/cache/memoryCache';
 import { AlignedSessionDocumentProvider } from './infrastructure/fs/alignedSessionDocumentProvider';
 import { PersistentCache } from './infrastructure/cache/persistentCache';
@@ -68,7 +64,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const svnAdapter = new SvnAdapter(new SvnCli(), output);
   const repositoryService = new RepositoryService([gitAdapter, svnAdapter], repositoryRegistry, uriFactory);
 
-  const memoryMaxSizeMb = vscode.workspace.getConfiguration('multidiff.cache').get<number>('maxSizeMb', 512);
+  const memoryMaxSizeMb = getCacheMaxSizeMb();
   const memoryCache = new MemoryCache(memoryMaxSizeMb * 1024 * 1024);
   const persistentCache = new PersistentCache(context.globalStorageUri);
   const cacheService = new CacheService(memoryCache, persistentCache, output);
@@ -150,11 +146,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('multidiff.expandAllCollapsedGaps', createExpandAllCollapsedGapsCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openActiveSessionSnapshot', createOpenActiveSessionSnapshotCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.openActiveSessionPairDiff', createOpenActiveSessionPairDiffCommand(commandContext)),
-    vscode.commands.registerCommand('multidiff.openForCurrentFile', createOpenForCurrentFileCommand(commandContext)),
-    vscode.commands.registerCommand('multidiff.openForExplorerFile', createOpenForExplorerFileCommand(commandContext)),
-    vscode.commands.registerCommand('multidiff.openRevisionSnapshot', createOpenRevisionSnapshotCommand(commandContext)),
-    vscode.commands.registerCommand('multidiff.openSessionAdjacent', createOpenSessionAdjacentCommand(commandContext)),
-    vscode.commands.registerCommand('multidiff.openSessionBase', createOpenSessionBaseCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.resetExpandedGaps', createResetExpandedGapsCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.internal.revealSession', createRevealSessionCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.internal.changePairProjection', createChangePairProjectionCommand(commandContext)),
@@ -163,6 +154,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('multidiff.internal.openSessionPairDiff', createOpenActiveSessionPairDiffCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.internal.openSessionSnapshot', createOpenActiveSessionSnapshotCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.internal.resetExpandedGaps', createResetExpandedGapsCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.scrollAlignedUp', createScrollAlignedUpCommand(commandContext)),
+    vscode.commands.registerCommand('multidiff.internal.scrollAlignedDown', createScrollAlignedDownCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.internal.shiftWindowLeft', createShiftWindowLeftCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.internal.shiftWindowRight', createShiftWindowRightCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.internal.switchCompareSurface', createSwitchCompareSurfaceCommand(commandContext)),
@@ -174,8 +167,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('multidiff.toggleCollapseUnchanged', createToggleCollapseUnchangedCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.cache.warmCurrentFile', createWarmCacheCommand(commandContext)),
     vscode.commands.registerCommand('multidiff.cache.clearCurrentRepo', createClearCurrentRepoCacheCommand(commandContext)),
-    vscode.commands.registerCommand('multidiff.cache.clearAll', createClearAllCacheCommand(commandContext)),
-    vscode.commands.registerCommand('multidiff.compatibility.openSnapshotAsTempFile', createOpenSnapshotAsTempFileCommand(commandContext))
+    vscode.commands.registerCommand('multidiff.cache.clearAll', createClearAllCacheCommand(commandContext))
   );
 
   output.info('Fukusa activated.');

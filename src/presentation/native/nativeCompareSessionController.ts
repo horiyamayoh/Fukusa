@@ -92,6 +92,10 @@ export class NativeCompareSessionController implements vscode.Disposable {
     });
   }
 
+  public async scrollActiveEditorAligned(delta: number): Promise<boolean> {
+    return this.editorSyncController.scrollActiveEditorAligned(delta);
+  }
+
   public async shiftWindow(delta: number): Promise<void> {
     const session = this.sessionService.getActiveBrowserSession();
     if (!session) {

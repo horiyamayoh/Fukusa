@@ -16,11 +16,11 @@ export class EditorSyncController implements vscode.Disposable {
   private visibleWindow: VisibleRevisionWindow | undefined;
   private renderGeneration = 0;
   private syncInProgress = false;
-  private suppressUntil = 0;
   private pendingSync: PendingSyncRequest | undefined;
   private pendingHandle: NodeJS.Timeout | undefined;
   private verifyHandle: NodeJS.Timeout | undefined;
   private readonly lastRevealByUri = new Map<string, { readonly generation: number; readonly line: number }>();
+  private readonly suppressedUris = new Map<string, number>();
   private readonly disposables: vscode.Disposable[] = [];
 
   public constructor(private readonly sessionService: SessionService) {
@@ -37,6 +37,7 @@ export class EditorSyncController implements vscode.Disposable {
     this.renderGeneration = renderGeneration;
     this.clearPendingSync();
     this.lastRevealByUri.clear();
+    this.suppressedUris.clear();
   }
 
   public restoreTopGlobalRow(
@@ -57,6 +58,7 @@ export class EditorSyncController implements vscode.Disposable {
 
     this.syncInProgress = true;
     try {
+      const suppressDeadline = Date.now() + 150;
       for (const editor of vscode.window.visibleTextEditors) {
         const binding = this.sessionService.getSessionFileBinding(editor.document.uri);
         if (
@@ -73,16 +75,82 @@ export class EditorSyncController implements vscode.Disposable {
           continue;
         }
 
-        editor.revealRange(new vscode.Range(safeLine, 0, safeLine, 0), vscode.TextEditorRevealType.AtTop);
-        this.lastRevealByUri.set(editor.document.uri.toString(true), {
+        revealLineAtTop(editor, safeLine);
+        const uriKey = editor.document.uri.toString(true);
+        this.lastRevealByUri.set(uriKey, {
           generation: renderGeneration,
           line: safeLine
         });
+        this.suppressedUris.set(uriKey, suppressDeadline);
       }
     } finally {
-      this.suppressUntil = Date.now() + 150;
       this.syncInProgress = false;
     }
+  }
+
+  public async scrollActiveEditorAligned(delta: number): Promise<boolean> {
+    if (!this.activeSessionId || !this.visibleWindow || delta === 0) {
+      return false;
+    }
+
+    const activeEditor = vscode.window.activeTextEditor;
+    if (!activeEditor) {
+      return false;
+    }
+
+    const binding = this.sessionService.getSessionFileBinding(activeEditor.document.uri);
+    if (
+      !binding
+      || binding.sessionId !== this.activeSessionId
+      || binding.lineNumberSpace !== 'globalRow'
+      || binding.windowStart !== this.visibleWindow.startRevisionIndex
+      || binding.projectedGlobalRows?.length === 0
+    ) {
+      return false;
+    }
+
+    const topDocumentLine = activeEditor.visibleRanges[0]?.start.line;
+    if (topDocumentLine === undefined) {
+      return false;
+    }
+
+    this.clearPendingSync();
+    await vscode.commands.executeCommand('editorScroll', {
+      to: delta < 0 ? 'up' : 'down',
+      by: 'line',
+      value: Math.abs(delta),
+      revealCursor: false
+    });
+
+    const actualTopDocumentLine = activeEditor.visibleRanges[0]?.start.line;
+    if (actualTopDocumentLine === undefined || actualTopDocumentLine === topDocumentLine) {
+      return false;
+    }
+
+    const topGlobalRow = binding.projectedLineMap
+      ? binding.projectedLineMap.documentLineToGlobalRow.get(actualTopDocumentLine + 1)
+      : actualTopDocumentLine + 1;
+    if (topGlobalRow === undefined) {
+      return false;
+    }
+
+    const revealedEditors = this.syncPeers(
+      this.activeSessionId,
+      binding.revisionIndex,
+      topGlobalRow,
+      binding.windowStart,
+      this.renderGeneration
+    );
+    if (revealedEditors.length > 0) {
+      this.scheduleVerify(
+        this.activeSessionId,
+        binding.revisionIndex,
+        topGlobalRow,
+        binding.windowStart,
+        this.renderGeneration
+      );
+    }
+    return true;
   }
 
   public clear(): void {
@@ -91,6 +159,7 @@ export class EditorSyncController implements vscode.Disposable {
     this.renderGeneration = 0;
     this.clearPendingSync();
     this.lastRevealByUri.clear();
+    this.suppressedUris.clear();
   }
 
   public dispose(): void {
@@ -102,8 +171,18 @@ export class EditorSyncController implements vscode.Disposable {
   }
 
   private async handleVisibleRangeChange(event: vscode.TextEditorVisibleRangesChangeEvent): Promise<void> {
-    if (this.syncInProgress || Date.now() < this.suppressUntil || !this.activeSessionId || !this.visibleWindow) {
+    if (this.syncInProgress || !this.activeSessionId || !this.visibleWindow) {
       return;
+    }
+
+    const eventUriKey = event.textEditor.document.uri.toString(true);
+    const suppressDeadline = this.suppressedUris.get(eventUriKey);
+    if (suppressDeadline !== undefined) {
+      if (Date.now() < suppressDeadline) {
+        return;
+      }
+
+      this.suppressedUris.delete(eventUriKey);
     }
 
     const binding = this.sessionService.getSessionFileBinding(event.textEditor.document.uri);
@@ -191,6 +270,7 @@ export class EditorSyncController implements vscode.Disposable {
 
     this.syncInProgress = true;
     try {
+      const suppressDeadline = Date.now() + 150;
       for (const editor of vscode.window.visibleTextEditors) {
         const targetBinding = this.sessionService.getSessionFileBinding(editor.document.uri);
         if (
@@ -208,15 +288,16 @@ export class EditorSyncController implements vscode.Disposable {
           continue;
         }
 
-        editor.revealRange(new vscode.Range(safeLine, 0, safeLine, 0), vscode.TextEditorRevealType.AtTop);
-        this.lastRevealByUri.set(editor.document.uri.toString(true), {
+        revealLineAtTop(editor, safeLine);
+        const uriKey = editor.document.uri.toString(true);
+        this.lastRevealByUri.set(uriKey, {
           generation,
           line: safeLine
         });
+        this.suppressedUris.set(uriKey, suppressDeadline);
         revealed.push({ editor, targetLine: safeLine });
       }
     } finally {
-      this.suppressUntil = Date.now() + 150;
       this.syncInProgress = false;
     }
 
@@ -239,6 +320,7 @@ export class EditorSyncController implements vscode.Disposable {
 
       this.syncInProgress = true;
       try {
+        const suppressDeadline = Date.now() + 150;
         for (const editor of vscode.window.visibleTextEditors) {
           const targetBinding = this.sessionService.getSessionFileBinding(editor.document.uri);
           if (
@@ -254,15 +336,16 @@ export class EditorSyncController implements vscode.Disposable {
           const safeLine = clampZeroBasedLine(editor.document, mapGlobalRowToDocumentLine(targetBinding, topGlobalRow) - 1);
           const actualTop = editor.visibleRanges[0]?.start.line;
           if (actualTop !== undefined && actualTop !== safeLine) {
-            editor.revealRange(new vscode.Range(safeLine, 0, safeLine, 0), vscode.TextEditorRevealType.AtTop);
-            this.lastRevealByUri.set(editor.document.uri.toString(true), {
+            revealLineAtTop(editor, safeLine);
+            const uriKey = editor.document.uri.toString(true);
+            this.lastRevealByUri.set(uriKey, {
               generation,
               line: safeLine
             });
+            this.suppressedUris.set(uriKey, suppressDeadline);
           }
         }
       } finally {
-        this.suppressUntil = Date.now() + 150;
         this.syncInProgress = false;
       }
     }, 80);
@@ -297,6 +380,36 @@ export class EditorSyncController implements vscode.Disposable {
       this.verifyHandle = undefined;
     }
   }
+}
+
+/**
+ * Returns the number of lines that VS Code's `revealRange(AtTop)` reserves above the
+ * target line.  Internally VS Code computes:
+ *
+ *     paddingTop = Math.min(viewportHeight / 2, Math.max(cursorSurroundingLines, stickyEnabled ? maxStickyLines : 0)) * lineHeight
+ *
+ * and then scrolls so that the target line appears *below* that padding.  Because
+ * `visibleRanges[0].start.line` reports the raw scroll position (without any sticky-scroll
+ * adjustment), a naïve `revealRange(N, AtTop)` ends up placing the viewport start at
+ * approximately `N − padding` lines, which desynchronises the scroll position from editors
+ * whose position was set by user scrolling.
+ *
+ * We read the same configuration values and pre-add the padding so that the raw scroll
+ * position after the reveal matches the intended line.
+ */
+function getRevealAtTopPadding(): number {
+  const editorConfig = vscode.workspace.getConfiguration('editor');
+  const stickyEnabled = editorConfig.get<boolean>('stickyScroll.enabled', true);
+  const maxStickyLines = editorConfig.get<number>('stickyScroll.maxLineCount', 5);
+  const cursorSurroundingLines = editorConfig.get<number>('cursorSurroundingLines', 0);
+  return stickyEnabled
+    ? Math.max(cursorSurroundingLines, maxStickyLines)
+    : cursorSurroundingLines;
+}
+
+function revealLineAtTop(editor: vscode.TextEditor, line: number): void {
+  const compensated = clampZeroBasedLine(editor.document, line + getRevealAtTopPadding());
+  editor.revealRange(new vscode.Range(compensated, 0, compensated, 0), vscode.TextEditorRevealType.AtTop);
 }
 
 function clampZeroBasedLine(document: vscode.TextDocument, line: number): number {

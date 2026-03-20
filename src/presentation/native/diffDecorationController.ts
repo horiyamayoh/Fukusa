@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 
 import { ComparePairOverlay, IntralineSegment, NWayCompareSession, SessionProjectedLineMap } from '../../adapters/common/types';
+import { buildCompareRowDisplayState, CompareRowDisplayState } from '../../application/compareRowDisplayState';
 import { getPairOverlay, getVisiblePairOverlays } from '../../application/comparePairing';
 import { SessionService } from '../../application/sessionService';
-import { buildIntralineDiff } from '../../application/sessionAlignmentService';
 import { buildSessionViewport } from '../../application/sessionViewport';
 
 interface RevisionDecorations {
@@ -32,6 +32,11 @@ export interface TextSegmentDecorationModel {
   readonly endCharacter: number;
 }
 
+interface VisibleSessionDecorationState {
+  readonly windowStart: number;
+  readonly decorationsByRevision: Map<number, RevisionDecorations>;
+}
+
 export class DiffDecorationController implements vscode.Disposable {
   private previousPairEdgeType: vscode.TextEditorDecorationType | undefined;
   private nextPairEdgeType: vscode.TextEditorDecorationType | undefined;
@@ -55,36 +60,24 @@ export class DiffDecorationController implements vscode.Disposable {
   }
 
   public refresh(): void {
+    const visibleSessionStates = this.collectVisibleSessionStates();
     this.clearVisibleEditors();
-
-    const session = this.sessionService.getActiveBrowserSession();
-    if (!session) {
-      return;
-    }
-
-    const viewport = buildSessionViewport(
-      session,
-      this.sessionService.getSessionViewState(session.id),
-      this.sessionService.getRowProjectionState(session.id)
-    );
-    const decorationsByRevision = buildRevisionDecorationModelsForViewport(
-      session,
-      viewport.visiblePairs,
-      viewport.activePair
-    );
 
     for (const editor of vscode.window.visibleTextEditors) {
       const binding = this.sessionService.getSessionFileBinding(editor.document.uri);
       if (
         !binding
-        || binding.sessionId !== session.id
         || binding.lineNumberSpace !== 'globalRow'
-        || binding.windowStart !== viewport.visibleWindow.startRevisionIndex
       ) {
         continue;
       }
 
-      const decorations = decorationsByRevision.get(binding.revisionIndex);
+      const sessionState = visibleSessionStates.get(binding.sessionId);
+      if (!sessionState || binding.windowStart !== sessionState.windowStart) {
+        continue;
+      }
+
+      const decorations = sessionState.decorationsByRevision.get(binding.revisionIndex);
       if (!decorations) {
         continue;
       }
@@ -181,6 +174,40 @@ export class DiffDecorationController implements vscode.Disposable {
       editor.setDecorations(this.removedTextType!, []);
     }
   }
+
+  private collectVisibleSessionStates(): Map<string, VisibleSessionDecorationState> {
+    const sessionIds = new Set<string>();
+    for (const editor of vscode.window.visibleTextEditors) {
+      const binding = this.sessionService.getSessionFileBinding(editor.document.uri);
+      if (binding?.lineNumberSpace === 'globalRow') {
+        sessionIds.add(binding.sessionId);
+      }
+    }
+
+    const visibleSessionStates = new Map<string, VisibleSessionDecorationState>();
+    for (const sessionId of sessionIds) {
+      const session = this.sessionService.getBrowserSession(sessionId);
+      if (!session || session.surfaceMode !== 'native') {
+        continue;
+      }
+
+      const viewport = buildSessionViewport(
+        session,
+        this.sessionService.getSessionViewState(session.id),
+        this.sessionService.getRowProjectionState(session.id)
+      );
+      visibleSessionStates.set(sessionId, {
+        windowStart: viewport.visibleWindow.startRevisionIndex,
+        decorationsByRevision: buildRevisionDecorationModelsForViewport(
+          session,
+          viewport.visiblePairs,
+          viewport.activePair
+        )
+      });
+    }
+
+    return visibleSessionStates;
+  }
 }
 
 export function buildRevisionDecorationModels(
@@ -205,65 +232,47 @@ export function buildRevisionDecorationModelsForViewport(
   activePair: ComparePairOverlay | undefined
 ): Map<number, RevisionDecorations> {
   const decorationsByRevision = new Map<number, RevisionDecorations>();
-
-  for (const pair of visiblePairs) {
-    collectPairEdgeDecorations(pair, decorationsByRevision);
-  }
-
-  if (activePair) {
-    collectActivePairDecorations(session, activePair, decorationsByRevision);
+  const changedRowNumbers = [...new Set(visiblePairs.flatMap((pair) => pair.changedRowNumbers))];
+  for (const rowNumber of changedRowNumbers) {
+    collectRowDecorations(
+      buildCompareRowDisplayState(session, rowNumber, visiblePairs, activePair),
+      decorationsByRevision
+    );
   }
 
   return decorationsByRevision;
 }
 
-function collectPairEdgeDecorations(
-  pair: ComparePairOverlay,
+function collectRowDecorations(
+  rowDisplayState: CompareRowDisplayState,
   decorationsByRevision: Map<number, RevisionDecorations>
 ): void {
-  const leftDecorations = getOrCreateDecorations(decorationsByRevision, pair.leftRevisionIndex);
-  const rightDecorations = getOrCreateDecorations(decorationsByRevision, pair.rightRevisionIndex);
-
-  for (const rowNumber of pair.changedRowNumbers) {
-    pushWholeLineDecoration(leftDecorations.nextPairEdges, rowNumber);
-    pushWholeLineDecoration(rightDecorations.previousPairEdges, rowNumber);
-  }
-}
-
-function collectActivePairDecorations(
-  session: NWayCompareSession,
-  pair: ComparePairOverlay,
-  decorationsByRevision: Map<number, RevisionDecorations>
-): void {
-  for (const rowNumber of pair.changedRowNumbers) {
-    const row = session.globalRows[rowNumber - 1];
-    if (!row) {
-      continue;
+  for (const cellState of rowDisplayState.cells) {
+    const decorations = getOrCreateDecorations(decorationsByRevision, cellState.revisionIndex);
+    if (cellState.hasNextPairEdge) {
+      pushWholeLineDecoration(decorations.nextPairEdges, rowDisplayState.rowNumber);
+    }
+    if (cellState.hasPreviousPairEdge) {
+      pushWholeLineDecoration(decorations.previousPairEdges, rowDisplayState.rowNumber);
     }
 
-    const leftCell = row.cells[pair.leftRevisionIndex];
-    const rightCell = row.cells[pair.rightRevisionIndex];
-
-    if (leftCell.present) {
-      const leftDecorations = getOrCreateDecorations(decorationsByRevision, pair.leftRevisionIndex);
-      if (!rightCell.present) {
-        pushWholeLineDecoration(leftDecorations.removedLines, leftCell.rowNumber);
-      } else if (leftCell.text !== rightCell.text) {
-        const intraline = buildIntralineDiff(leftCell.text, rightCell.text);
-        pushWholeLineDecoration(leftDecorations.modifiedLines, leftCell.rowNumber);
-        pushIntralineDecorations(leftDecorations.removedText, leftCell.rowNumber, intraline.left);
-      }
-    }
-
-    if (rightCell.present) {
-      const rightDecorations = getOrCreateDecorations(decorationsByRevision, pair.rightRevisionIndex);
-      if (!leftCell.present) {
-        pushWholeLineDecoration(rightDecorations.addedLines, rightCell.rowNumber);
-      } else if (leftCell.text !== rightCell.text) {
-        const intraline = buildIntralineDiff(leftCell.text, rightCell.text);
-        pushWholeLineDecoration(rightDecorations.modifiedLines, rightCell.rowNumber);
-        pushIntralineDecorations(rightDecorations.addedText, rightCell.rowNumber, intraline.right);
-      }
+    switch (cellState.activeChangeKind) {
+      case 'added':
+        pushWholeLineDecoration(decorations.addedLines, rowDisplayState.rowNumber);
+        break;
+      case 'removed':
+        pushWholeLineDecoration(decorations.removedLines, rowDisplayState.rowNumber);
+        break;
+      case 'modified':
+        pushWholeLineDecoration(decorations.modifiedLines, rowDisplayState.rowNumber);
+        pushIntralineDecorations(
+          cellState.activeSegmentKind === 'removed' ? decorations.removedText : decorations.addedText,
+          rowDisplayState.rowNumber,
+          cellState.activeIntralineSegments
+        );
+        break;
+      default:
+        break;
     }
   }
 }

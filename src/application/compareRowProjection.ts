@@ -68,28 +68,6 @@ export function projectChangedRowNumbers(
     }
   }
 
-  if (preservedRows.size === 0) {
-    const hiddenRowCount = totalRowCount;
-    const gapKey = buildGapKey(1, totalRowCount);
-    return {
-      totalRowCount,
-      projectedRowCount: expandedGapKeys.has(gapKey) ? totalRowCount : 1,
-      hiddenRowCount: expandedGapKeys.has(gapKey) ? 0 : hiddenRowCount,
-      rows: expandedGapKeys.has(gapKey)
-        ? Array.from({ length: totalRowCount }, (_, index) => ({
-          kind: 'data',
-          rowNumber: index + 1
-        }))
-        : [{
-          kind: 'gap',
-          gapKey,
-          startRowNumber: 1,
-          endRowNumber: totalRowCount,
-          hiddenRowCount
-        }]
-    };
-  }
-
   const rows: CompareProjectedRow[] = [];
   let hiddenRowCount = 0;
 
@@ -112,12 +90,7 @@ export function projectChangedRowNumbers(
     const unchangedCount = endRowNumber - startRowNumber + 1;
     const gapKey = buildGapKey(startRowNumber, endRowNumber);
     if (unchangedCount < minimumCollapsedRows || expandedGapKeys.has(gapKey)) {
-      for (let visibleRowNumber = startRowNumber; visibleRowNumber <= endRowNumber; visibleRowNumber += 1) {
-        rows.push({
-          kind: 'data',
-          rowNumber: visibleRowNumber
-        });
-      }
+      appendDataRows(rows, startRowNumber, endRowNumber);
       continue;
     }
 
@@ -141,4 +114,13 @@ export function projectChangedRowNumbers(
 
 export function buildGapKey(startRowNumber: number, endRowNumber: number): string {
   return `${startRowNumber}:${endRowNumber}`;
+}
+
+function appendDataRows(rows: CompareProjectedRow[], startRowNumber: number, endRowNumber: number): void {
+  for (let rowNumber = startRowNumber; rowNumber <= endRowNumber; rowNumber += 1) {
+    rows.push({
+      kind: 'data',
+      rowNumber
+    });
+  }
 }

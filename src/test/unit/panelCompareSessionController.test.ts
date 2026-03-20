@@ -51,8 +51,11 @@ suite('Unit: PanelCompareSessionController', () => {
     assert.match(html, /if \(!hasPendingInitialScrollRestore\) \{\s*captureCurrentScrollPosition\(\);\s*\}/s);
     assert.match(html, /captureViewportAnchor\(\);\s*renderRows\(\);\s*hasPendingInitialScrollRestore = false;\s*syncScrollState\(\);/s);
     assert.match(html, /anchorRowNumber:\s*runtime\.anchorRowNumber,\s*anchorRowOffset:\s*runtime\.anchorRowOffset/s);
+    assert.match(html, /changePairProjectionButton\.toggleAttribute\('disabled', !viewModel\.canChangePairProjection\)/);
     assert.match(html, /expandAllGapsButton\.toggleAttribute\('disabled', !viewModel\.collapseUnchanged \|\| viewModel\.collapsedGapCount === 0\)/);
     assert.match(html, /resetExpandedGapsButton\.toggleAttribute\('disabled', !viewModel\.collapseUnchanged \|\| viewModel\.expandedGapCount === 0\)/);
+    assert.match(html, /activeSnapshotButton\.toggleAttribute\('disabled', !viewModel\.hasActiveSnapshot\)/);
+    assert.match(html, /activePairButton\.toggleAttribute\('disabled', !viewModel\.hasActivePair\)/);
 
     controller.dispose();
   });

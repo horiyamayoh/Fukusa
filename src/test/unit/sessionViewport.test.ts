@@ -3,7 +3,12 @@ import * as vscode from 'vscode';
 
 import { NWayCompareSession, RepoContext, RevisionRef, SessionViewState } from '../../adapters/common/types';
 import { RepositoryRegistry } from '../../application/repositoryRegistry';
-import { buildSessionViewport, getSessionVisibleWindow, MAX_VISIBLE_REVISIONS } from '../../application/sessionViewport';
+import {
+  buildSessionViewport,
+  deriveSessionSelectionViewState,
+  getSessionVisibleWindow,
+  MAX_VISIBLE_REVISIONS
+} from '../../application/sessionViewport';
 import { UriFactory } from '../../infrastructure/fs/uriFactory';
 
 suite('Unit: sessionViewport', () => {
@@ -24,7 +29,7 @@ suite('Unit: sessionViewport', () => {
     assert.deepStrictEqual(viewport.visiblePairs.map((pair) => pair.key), ['2:3', '3:4', '4:5', '5:6', '6:7', '7:8', '8:9', '9:10']);
   });
 
-  test('keeps a line-based fallback when collapse projection yields only gaps', () => {
+  test('keeps native line surfaces aligned with the projected visible rows when collapse yields only gaps', () => {
     const session = createSession('viewport-gaps', createRevisions(2), {
       surfaceMode: 'native',
       rowCount: 6,
@@ -36,9 +41,9 @@ suite('Unit: sessionViewport', () => {
 
     assert.deepStrictEqual(viewport.rowProjection.rows.map((row) => row.kind), ['gap']);
     assert.deepStrictEqual(viewport.visibleDataRowNumbers, []);
-    assert.deepStrictEqual(viewport.documentGlobalRowNumbers, [1, 2, 3, 4, 5, 6]);
-    assert.strictEqual(viewport.documentLineMap.documentLineToGlobalRow.get(1), 1);
-    assert.strictEqual(viewport.documentLineMap.documentLineToGlobalRow.get(6), 6);
+    assert.deepStrictEqual(viewport.documentGlobalRowNumbers, []);
+    assert.strictEqual(viewport.documentLineMap.documentLineToGlobalRow.size, 0);
+    assert.strictEqual(viewport.documentLineMap.globalRowToDocumentLine.size, 0);
   });
 
   test('treats panel sessions as one full visible window regardless of pageStart', () => {
@@ -52,6 +57,43 @@ suite('Unit: sessionViewport', () => {
     assert.strictEqual(visibleWindow.startRevisionIndex, 0);
     assert.strictEqual(visibleWindow.endRevisionIndex, 3);
     assert.strictEqual(visibleWindow.rawSnapshots.length, 4);
+  });
+
+  test('derives native selection state by shifting the page to include the focused revision', () => {
+    const session = createSession('viewport-selection-revision', createRevisions(11), {
+      surfaceMode: 'native'
+    });
+
+    const viewState = deriveSessionSelectionViewState(session, {
+      activeRevisionIndex: 10,
+      activePairKey: undefined,
+      pageStart: 0
+    }, MAX_VISIBLE_REVISIONS);
+
+    assert.strictEqual(viewState.pageStart, 2);
+    assert.strictEqual(viewState.activeRevisionIndex, 10);
+    assert.strictEqual(viewState.activePairKey, '9:10');
+  });
+
+  test('preserves explicit pair selection by shifting the native page to fit both revisions', () => {
+    const session = {
+      ...createSession('viewport-selection-pair', createRevisions(12), {
+        surfaceMode: 'native'
+      }),
+      pairProjection: {
+        mode: 'custom' as const,
+        pairKeys: ['2:10']
+      }
+    };
+
+    const viewState = deriveSessionSelectionViewState(session, {
+      activeRevisionIndex: 10,
+      activePairKey: '2:10',
+      pageStart: 4
+    }, MAX_VISIBLE_REVISIONS);
+
+    assert.strictEqual(viewState.pageStart, 2);
+    assert.strictEqual(viewState.activePairKey, '2:10');
   });
 });
 

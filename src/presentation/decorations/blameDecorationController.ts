@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 import { BlameHeatmapLine, BlameService } from '../../application/blameService';
 import { SessionService } from '../../application/sessionService';
+import { getBlameShowOverviewRuler } from '../../configuration/extensionConfiguration';
 import { OutputLogger } from '../../util/output';
 
 const darkPalette = ['rgba(40,167,69,0.18)', 'rgba(155,200,83,0.18)', 'rgba(255,193,7,0.18)', 'rgba(255,128,0,0.18)', 'rgba(220,53,69,0.22)'];
@@ -101,7 +102,7 @@ export class BlameDecorationController implements vscode.Disposable {
     }
 
     const palette = selectPalette(vscode.window.activeColorTheme.kind);
-    const showOverviewRuler = vscode.workspace.getConfiguration('multidiff').get<boolean>('blame.showOverviewRuler', true);
+    const showOverviewRuler = getBlameShowOverviewRuler();
     for (const color of palette) {
       this.types.push(vscode.window.createTextEditorDecorationType({
         isWholeLine: true,

@@ -1,9 +1,8 @@
 import { NWayCompareSession, RawSnapshot, SessionRowProjectionState, SessionViewState } from '../adapters/common/types';
 import {
   buildSessionViewport,
-  getSessionActivePair,
-  getSessionVisibleWindow,
-  MAX_VISIBLE_REVISIONS
+  MAX_VISIBLE_REVISIONS,
+  SessionViewportState
 } from './sessionViewport';
 
 export interface SessionCapabilityState {
@@ -20,6 +19,8 @@ export interface SessionCapabilityState {
   readonly hasExpandedGaps: boolean;
   readonly visibleRevisionLabel: string;
 }
+
+type SessionCapabilityProjectionState = Pick<SessionRowProjectionState, 'collapseUnchanged' | 'expandedGapKeys'>;
 
 export function canChangePairProjection(session: Pick<NWayCompareSession, 'rawSnapshots'>): boolean {
   return session.rawSnapshots.length > 2;
@@ -57,18 +58,23 @@ export function getSessionCapabilityState(
   rowProjectionState: SessionRowProjectionState,
   pageSize = MAX_VISIBLE_REVISIONS
 ): SessionCapabilityState {
-  const visibleWindow = getSessionVisibleWindow(session, viewState, pageSize);
-  const activePair = getSessionActivePair(session, viewState, visibleWindow);
+  const viewport = buildSessionViewport(session, viewState, rowProjectionState, pageSize);
+  return deriveSessionCapabilityState(session, viewState, rowProjectionState, viewport, pageSize);
+}
+
+export function deriveSessionCapabilityState(
+  session: Pick<NWayCompareSession, 'surfaceMode' | 'rawSnapshots' | 'pairProjection' | 'adjacentPairs' | 'globalRows'>,
+  viewState: Pick<SessionViewState, 'activeRevisionIndex' | 'pageStart'>,
+  rowProjectionState: SessionCapabilityProjectionState,
+  viewport: Pick<SessionViewportState, 'visibleWindow' | 'activePair' | 'rowProjection'>,
+  pageSize = MAX_VISIBLE_REVISIONS
+): SessionCapabilityState {
   const activeSnapshot = getActiveSnapshot(session, viewState);
   const canShiftWindow = canShiftVisibleWindow(session);
   const canShiftWindowLeft = canShiftVisibleWindowLeft(session, viewState);
   const canShiftWindowRight = canShiftVisibleWindowRight(session, viewState, pageSize);
-  const hasCollapsedGaps = rowProjectionState.collapseUnchanged && buildSessionViewport(
-    session,
-    viewState,
-    rowProjectionState,
-    pageSize
-  ).rowProjection.rows.some((row) => row.kind === 'gap');
+  const hasCollapsedGaps = rowProjectionState.collapseUnchanged
+    && viewport.rowProjection.rows.some((row) => row.kind === 'gap');
 
   return {
     canChangePairProjection: canChangePairProjection(session),
@@ -76,13 +82,13 @@ export function getSessionCapabilityState(
     canShiftWindowLeft,
     canShiftWindowRight,
     hasActiveSnapshot: activeSnapshot !== undefined,
-    hasActivePair: activePair !== undefined,
+    hasActivePair: viewport.activePair !== undefined,
     activeRevisionLabel: activeSnapshot?.revisionLabel,
-    activePairLabel: activePair?.label,
+    activePairLabel: viewport.activePair?.label,
     collapseUnchanged: rowProjectionState.collapseUnchanged,
     hasCollapsedGaps,
     hasExpandedGaps: rowProjectionState.expandedGapKeys.length > 0,
-    visibleRevisionLabel: getVisibleRevisionLabel(session, viewState, pageSize)
+    visibleRevisionLabel: getVisibleRevisionLabel(session, viewport)
   };
 }
 
@@ -101,10 +107,9 @@ function getActiveSnapshot(
 
 function getVisibleRevisionLabel(
   session: Pick<NWayCompareSession, 'surfaceMode' | 'rawSnapshots'>,
-  viewState: SessionViewState,
-  pageSize: number
+  viewport: Pick<SessionViewportState, 'visibleWindow'>
 ): string {
-  const visibleWindow = getSessionVisibleWindow(session, viewState, pageSize);
+  const { visibleWindow } = viewport;
   if (visibleWindow.rawSnapshots.length === 0) {
     return '0 revisions';
   }

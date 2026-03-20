@@ -1,7 +1,8 @@
 import { ComparePairOverlay, NWayCompareSession, SessionViewState } from '../../adapters/common/types';
 import { getPairProjectionLabel } from '../../application/comparePairing';
 import { CompareRowProjectionOptions } from '../../application/compareRowProjection';
-import { buildIntralineDiff } from '../../application/sessionAlignmentService';
+import { buildCompareRowDisplayState, CompareRowCellDisplayState } from '../../application/compareRowDisplayState';
+import { deriveSessionCapabilityState } from '../../application/sessionCapabilities';
 import { buildSessionViewport } from '../../application/sessionViewport';
 
 export interface ComparePanelCellModel {
@@ -52,6 +53,9 @@ export interface ComparePanelViewModel {
   readonly hiddenRowCount: number;
   readonly collapsedGapCount: number;
   readonly expandedGapCount: number;
+  readonly canChangePairProjection: boolean;
+  readonly hasActiveSnapshot: boolean;
+  readonly hasActivePair: boolean;
   readonly columns: readonly ComparePanelColumnModel[];
   readonly pairs: readonly ComparePanelPairModel[];
   readonly rows: readonly ComparePanelRowModel[];
@@ -65,6 +69,10 @@ export function buildComparePanelViewModel(
   options: CompareRowProjectionOptions = { collapseUnchanged: false }
 ): ComparePanelViewModel {
   const viewport = buildSessionViewport(session, viewState, options);
+  const capabilities = deriveSessionCapabilityState(session, viewState, {
+    collapseUnchanged: options.collapseUnchanged,
+    expandedGapKeys: [...(options.expandedGapKeys ?? [])]
+  }, viewport);
   const activePair = viewport.activePair;
   const visiblePairs = viewport.visiblePairs;
   const rowProjection = viewport.rowProjection;
@@ -78,6 +86,9 @@ export function buildComparePanelViewModel(
     hiddenRowCount: rowProjection.hiddenRowCount,
     collapsedGapCount,
     expandedGapCount: new Set(options.expandedGapKeys ?? []).size,
+    canChangePairProjection: capabilities.canChangePairProjection,
+    hasActiveSnapshot: capabilities.hasActiveSnapshot,
+    hasActivePair: capabilities.hasActivePair,
     columns: session.rawSnapshots.map((snapshot) => ({
       revisionIndex: snapshot.revisionIndex,
       revisionLabel: snapshot.revisionLabel,
@@ -94,8 +105,8 @@ export function buildComparePanelViewModel(
         ? buildDataRowModel(row.rowNumber, session, visiblePairs, activePair)
         : buildGapRowModel(row.gapKey, row.startRowNumber, row.endRowNumber, row.hiddenRowCount)
     )),
-    activeRevisionLabel: session.rawSnapshots[viewState.activeRevisionIndex]?.revisionLabel,
-    activePairLabel: activePair?.label
+    activeRevisionLabel: capabilities.activeRevisionLabel,
+    activePairLabel: capabilities.activePairLabel
   };
 }
 
@@ -106,13 +117,13 @@ function buildDataRowModel(
   activePair: ComparePairOverlay | undefined
 ): ComparePanelDataRowModel {
   const row = session.globalRows[rowNumber - 1];
-  const activePairIsChanged = activePair?.changedRowNumbers.includes(rowNumber) ?? false;
+  const rowDisplayState = buildCompareRowDisplayState(session, rowNumber, visiblePairs, activePair);
 
   return {
     kind: 'data',
     rowNumber,
-    classNames: activePairIsChanged ? ['row', 'row--active-pair'] : ['row'],
-    cells: row.cells.map((cell) => buildCellModel(cell.revisionIndex, rowNumber, session, visiblePairs, activePair))
+    classNames: rowDisplayState.isActivePairRow ? ['row', 'row--active-pair'] : ['row'],
+    cells: row.cells.map((cell) => buildCellModel(cell.revisionIndex, cell.text, cell.present, rowDisplayState.cells[cell.revisionIndex]))
   };
 }
 
@@ -135,51 +146,47 @@ function buildGapRowModel(
 
 function buildCellModel(
   revisionIndex: number,
-  rowNumber: number,
-  session: NWayCompareSession,
-  visiblePairs: readonly ComparePairOverlay[],
-  activePair: ComparePairOverlay | undefined
+  text: string,
+  present: boolean,
+  cellState: CompareRowCellDisplayState | undefined
 ): ComparePanelCellModel {
-  const cell = session.globalRows[rowNumber - 1].cells[revisionIndex];
   const classNames = ['cell'];
-  let html = cell.present ? escapeHtml(cell.text) : '&nbsp;';
+  let html = present ? escapeHtml(text) : '&nbsp;';
 
-  if (!cell.present) {
+  if (!present) {
     classNames.push('cell--empty');
   }
 
-  if (visiblePairs.some((pair) => pair.leftRevisionIndex === revisionIndex && pair.changedRowNumbers.includes(rowNumber))) {
+  if (cellState?.hasNextPairEdge) {
     classNames.push('cell--edge-next');
   }
-  if (visiblePairs.some((pair) => pair.rightRevisionIndex === revisionIndex && pair.changedRowNumbers.includes(rowNumber))) {
+  if (cellState?.hasPreviousPairEdge) {
     classNames.push('cell--edge-prev');
   }
 
-  if (activePair?.changedRowNumbers.includes(rowNumber)) {
-    const leftCell = session.globalRows[rowNumber - 1].cells[activePair.leftRevisionIndex];
-    const rightCell = session.globalRows[rowNumber - 1].cells[activePair.rightRevisionIndex];
-
-    if (revisionIndex === activePair.leftRevisionIndex) {
-      if (leftCell.present && !rightCell.present) {
-        classNames.push('cell--active-removed');
-      } else if (leftCell.present && rightCell.present && leftCell.text !== rightCell.text) {
-        classNames.push('cell--active-modified');
-        html = renderSegments(leftCell.text, buildIntralineDiff(leftCell.text, rightCell.text).left, 'seg--removed');
-      }
-    } else if (revisionIndex === activePair.rightRevisionIndex) {
-      if (!leftCell.present && rightCell.present) {
-        classNames.push('cell--active-added');
-      } else if (leftCell.present && rightCell.present && leftCell.text !== rightCell.text) {
-        classNames.push('cell--active-modified');
-        html = renderSegments(rightCell.text, buildIntralineDiff(leftCell.text, rightCell.text).right, 'seg--added');
-      }
-    }
+  switch (cellState?.activeChangeKind) {
+    case 'added':
+      classNames.push('cell--active-added');
+      break;
+    case 'removed':
+      classNames.push('cell--active-removed');
+      break;
+    case 'modified':
+      classNames.push('cell--active-modified');
+      html = renderSegments(
+        text,
+        cellState.activeIntralineSegments,
+        cellState.activeSegmentKind === 'removed' ? 'seg--removed' : 'seg--added'
+      );
+      break;
+    default:
+      break;
   }
 
   return {
     revisionIndex,
-    text: cell.text,
-    present: cell.present,
+    text,
+    present,
     html,
     classNames
   };

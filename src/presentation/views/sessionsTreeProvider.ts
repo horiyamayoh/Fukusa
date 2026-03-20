@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-import { NWayCompareSession, RawSnapshot } from '../../adapters/common/types';
+import { NWayCompareSession } from '../../adapters/common/types';
 import { getPairProjectionLabel } from '../../application/comparePairing';
 import {
   getSessionCapabilityState,
@@ -10,13 +10,13 @@ import { SessionService } from '../../application/sessionService';
 
 interface SessionTreeSessionElement {
   readonly kind: 'session';
-  readonly session: NWayCompareSession;
+  readonly sessionId: string;
 }
 
 interface SessionTreeSnapshotElement {
   readonly kind: 'snapshot';
   readonly sessionId: string;
-  readonly snapshot: RawSnapshot;
+  readonly revisionIndex: number;
 }
 
 type SessionTreeElement = SessionTreeSessionElement | SessionTreeSnapshotElement;
@@ -39,48 +39,61 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionTree
 
   public getTreeItem(element: SessionTreeElement): vscode.TreeItem {
     if (element.kind === 'session') {
-      const item = new vscode.TreeItem(pathLabel(element.session.relativePath), vscode.TreeItemCollapsibleState.Expanded);
-      const rowProjectionState = this.sessionService.getRowProjectionState(element.session.id);
+      const session = this.sessionService.getBrowserSession(element.sessionId);
+      if (!session) {
+        return new vscode.TreeItem('Unavailable Session', vscode.TreeItemCollapsibleState.None);
+      }
+
+      const item = new vscode.TreeItem(pathLabel(session.relativePath), vscode.TreeItemCollapsibleState.Expanded);
+      item.id = session.id;
+      const rowProjectionState = this.sessionService.getRowProjectionState(session.id);
       const capabilities = getSessionCapabilityState(
-        element.session,
-        this.sessionService.getSessionViewState(element.session.id),
+        session,
+        this.sessionService.getSessionViewState(session.id),
         rowProjectionState
       );
-      item.contextValue = this.buildSessionContextValue(element.session, capabilities);
+      item.contextValue = this.buildSessionContextValue(session, capabilities);
       item.description = [
-        element.session.surfaceMode,
+        session.surfaceMode,
         capabilities.visibleRevisionLabel,
         capabilities.activeRevisionLabel ? `active ${capabilities.activeRevisionLabel}` : undefined,
         capabilities.activePairLabel ? `pair ${capabilities.activePairLabel}` : undefined,
-        `${element.session.rowCount} rows`,
-        getPairProjectionLabel(element.session.pairProjection),
+        `${session.rowCount} rows`,
+        getPairProjectionLabel(session.pairProjection),
         capabilities.collapseUnchanged ? 'collapsed' : 'full rows'
       ].filter((part): part is string => part !== undefined).join(' / ');
-      item.tooltip = `${element.session.repo.kind} ${element.session.repo.repoRoot}`;
+      item.tooltip = `${session.repo.kind} ${session.repo.repoRoot}`;
       item.command = {
         command: 'multidiff.internal.revealSession',
         title: 'Reveal Compare Session',
-        arguments: [element.session.id]
+        arguments: [session.id]
       };
       return item;
     }
 
+    const session = this.sessionService.getBrowserSession(element.sessionId);
+    const snapshot = session?.rawSnapshots[element.revisionIndex];
+    if (!session || !snapshot) {
+      return new vscode.TreeItem('Unavailable Snapshot', vscode.TreeItemCollapsibleState.None);
+    }
+
     const item = new vscode.TreeItem(
-      `${element.snapshot.revisionLabel} | ${element.snapshot.relativePath}`,
+      `${snapshot.revisionLabel} | ${snapshot.relativePath}`,
       vscode.TreeItemCollapsibleState.None
     );
+    item.id = `${element.sessionId}:${element.revisionIndex}`;
     item.contextValue = 'snapshot';
-    const isActiveSnapshot = this.sessionService.getSessionViewState(element.sessionId).activeRevisionIndex === element.snapshot.revisionIndex;
+    const isActiveSnapshot = this.sessionService.getSessionViewState(element.sessionId).activeRevisionIndex === snapshot.revisionIndex;
     item.command = {
       command: 'multidiff.internal.openSessionSnapshot',
       title: 'Open Session Snapshot',
       arguments: [{
         sessionId: element.sessionId,
-        revisionIndex: element.snapshot.revisionIndex
+        revisionIndex: snapshot.revisionIndex
       }]
     };
     item.description = [
-      element.snapshot.revisionId.slice(0, 12),
+      snapshot.revisionId.slice(0, 12),
       isActiveSnapshot ? 'active' : undefined
     ].filter((part): part is string => part !== undefined).join(' / ');
     return item;
@@ -90,7 +103,7 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionTree
     if (!element) {
       return this.sessionService.listSessions().map((session) => ({
         kind: 'session',
-        session
+        sessionId: session.id
       }));
     }
 
@@ -98,10 +111,15 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionTree
       return [];
     }
 
-    return element.session.rawSnapshots.map((snapshot) => ({
+    const session = this.sessionService.getBrowserSession(element.sessionId);
+    if (!session) {
+      return [];
+    }
+
+    return session.rawSnapshots.map((snapshot) => ({
       kind: 'snapshot',
-      sessionId: element.session.id,
-      snapshot
+      sessionId: session.id,
+      revisionIndex: snapshot.revisionIndex
     }));
   }
 

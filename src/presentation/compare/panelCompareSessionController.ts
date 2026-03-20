@@ -686,11 +686,20 @@ function renderComparePanelHtml(webview: vscode.Webview, extensionUri: vscode.Ur
         if (collapseButton) {
           collapseButton.classList.toggle('pillButton--active', Boolean(viewModel.collapseUnchanged));
         }
+        if (changePairProjectionButton) {
+          changePairProjectionButton.toggleAttribute('disabled', !viewModel.canChangePairProjection);
+        }
         if (expandAllGapsButton) {
           expandAllGapsButton.toggleAttribute('disabled', !viewModel.collapseUnchanged || viewModel.collapsedGapCount === 0);
         }
         if (resetExpandedGapsButton) {
           resetExpandedGapsButton.toggleAttribute('disabled', !viewModel.collapseUnchanged || viewModel.expandedGapCount === 0);
+        }
+        if (activeSnapshotButton) {
+          activeSnapshotButton.toggleAttribute('disabled', !viewModel.hasActiveSnapshot);
+        }
+        if (activePairButton) {
+          activePairButton.toggleAttribute('disabled', !viewModel.hasActivePair);
         }
       }
 

@@ -91,8 +91,7 @@ export async function openSingleSnapshot(context: CommandContext, resource: Reso
 
   const session = await context.sessionBuilderService.createSession(resource, [revision]);
   const snapshot = session.rawSnapshots[0];
-  const textDocument = await vscode.workspace.openTextDocument(snapshot.rawUri);
-  await vscode.window.showTextDocument(textDocument, { preview: false, viewColumn: vscode.ViewColumn.Active });
+  await openSnapshotDocument(context, snapshot);
 }
 
 export async function openSession(
@@ -278,6 +277,15 @@ export {
   canShiftVisibleWindowLeft,
   canShiftVisibleWindowRight
 } from '../application/sessionCapabilities';
+
+export async function openSnapshotDocument(
+  context: CommandContext,
+  snapshot: Pick<RawSnapshot, 'snapshotUri'>
+): Promise<vscode.TextEditor> {
+  const snapshotUri = await context.compatibilityService.resolveSnapshotUri(snapshot.snapshotUri);
+  const textDocument = await vscode.workspace.openTextDocument(snapshotUri);
+  return vscode.window.showTextDocument(textDocument, { preview: false, viewColumn: vscode.ViewColumn.Active });
+}
 
 function toTargetSessionId(target?: SessionCommandTarget): string | undefined {
   if (typeof target === 'string') {

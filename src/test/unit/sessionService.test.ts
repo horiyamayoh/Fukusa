@@ -68,6 +68,37 @@ suite('Unit: SessionService', () => {
     assert.strictEqual(service.getActivePair(session)?.key, '2:3');
   });
 
+  test('shifts the native page when focusing a revision outside the current visible window', () => {
+    const service = new SessionService();
+    const session = service.createBrowserSession(createSession('session-focus-page', createRevisions(11)));
+
+    service.setActiveRevision(session.id, 10);
+
+    assert.deepStrictEqual(service.getSessionViewState(session.id), {
+      activeRevisionIndex: 10,
+      activePairKey: '9:10',
+      pageStart: 2
+    });
+    assert.strictEqual(service.getVisibleWindow(session).startRevisionIndex, 2);
+  });
+
+  test('shifts the native page to keep an explicitly selected pair visible when it fits', () => {
+    const service = new SessionService();
+    const session = service.createBrowserSession({
+      ...createSession('session-pair-page', createRevisions(12)),
+      pairProjection: { mode: 'custom', pairKeys: ['2:10'] }
+    });
+
+    service.shiftWindow(session.id, 3, MAX_VISIBLE_REVISIONS);
+    service.setActivePair(session.id, '2:10');
+
+    assert.deepStrictEqual(service.getSessionViewState(session.id), {
+      activeRevisionIndex: 10,
+      activePairKey: '2:10',
+      pageStart: 2
+    });
+  });
+
   test('shifts the visible window and clamps the active revision into the new page', () => {
     const service = new SessionService();
     const session = service.createBrowserSession(createSession('session-5', createRevisions(11)));
@@ -321,6 +352,21 @@ suite('Unit: SessionService', () => {
     service.updateSurfaceMode(session.id, 'panel');
 
     assert.strictEqual(presentationChangeCount, 1);
+  });
+
+  test('realigns the native page around the active revision when switching back from panel', () => {
+    const service = new SessionService();
+    const session = service.createBrowserSession(createSession('session-surface-selection', createRevisions(11)));
+
+    service.updateSurfaceMode(session.id, 'panel');
+    service.setActiveRevision(session.id, 10);
+    service.updateSurfaceMode(session.id, 'native');
+
+    assert.deepStrictEqual(service.getSessionViewState(session.id), {
+      activeRevisionIndex: 10,
+      activePairKey: '9:10',
+      pageStart: 2
+    });
   });
 
   function createSession(

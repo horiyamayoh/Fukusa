@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 
+import { getSnapshotOpenMode } from '../configuration/extensionConfiguration';
 import { TempSnapshotMirror } from '../infrastructure/temp/tempSnapshotMirror';
 
 export class LanguageFeatureCompatibilityService implements vscode.Disposable {
@@ -10,7 +11,7 @@ export class LanguageFeatureCompatibilityService implements vscode.Disposable {
       return uri;
     }
 
-    const openMode = vscode.workspace.getConfiguration('multidiff').get<string>('snapshot.openMode', 'virtual');
+    const openMode = getSnapshotOpenMode();
     if (openMode === 'tempFile') {
       return this.tempSnapshotMirror.mirror(uri);
     }

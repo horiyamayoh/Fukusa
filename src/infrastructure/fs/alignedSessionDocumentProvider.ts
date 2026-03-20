@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 
+import { NWayCompareSession } from '../../adapters/common/types';
 import { SessionService } from '../../application/sessionService';
 import { OutputLogger } from '../../util/output';
 import { UriFactory } from './uriFactory';
@@ -27,10 +28,7 @@ export class AlignedSessionDocumentProvider implements vscode.TextDocumentConten
       this.output.warn(`Session document path mismatch for ${uri.toString()}; rendering ${snapshot.relativePath} from the active session.`);
     }
 
-    const binding = this.sessionService.getSessionFileBinding(uri);
-    const renderedRowNumbers = binding?.lineNumberSpace === 'globalRow' && binding.projectedGlobalRows && binding.projectedGlobalRows.length > 0
-      ? binding.projectedGlobalRows
-      : session.globalRows.map((row) => row.rowNumber);
+    const renderedRowNumbers = this.getRenderedRowNumbers(uri, session);
 
     return renderedRowNumbers
       .map((rowNumber) => {
@@ -39,5 +37,14 @@ export class AlignedSessionDocumentProvider implements vscode.TextDocumentConten
         return cell?.present ? cell.text : '';
       })
       .join('\n');
+  }
+
+  private getRenderedRowNumbers(uri: vscode.Uri, session: NWayCompareSession): readonly number[] {
+    const binding = this.sessionService.getSessionFileBinding(uri);
+    if (binding?.lineNumberSpace === 'globalRow' && binding.projectedGlobalRows !== undefined) {
+      return binding.projectedGlobalRows;
+    }
+
+    return session.globalRows.map((row) => row.rowNumber);
   }
 }

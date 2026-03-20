@@ -22,12 +22,12 @@ Fukusa is a VS Code extension for historical N-way compare. It opens the selecte
 | Command | Description |
 | --- | --- |
 | `Fukusa: Browse Revisions` | Pick 2 or more revisions for the current file or an Explorer file and open a native-editor N-way compare session. |
-| `Fukusa: Browse Revisions (Single-Tab)` | Pick revisions and open the N-way compare inside one webview panel with a single scroll surface. |
+| `Fukusa: Browse Revisions (Single-Tab)` | Pick revisions for the current file or an Explorer file and open the N-way compare inside one webview panel with a single scroll surface. |
 | `Fukusa: Change Pair Projection` | Switch the active session between `Adjacent`, `Base`, `All`, or `Custom` pair projection without rebuilding the session. |
 | `Fukusa: Switch Compare Surface` | Move the active session between native editors and the single-tab panel without rebuilding the compare model. |
 | `Fukusa: Close Active Session` | Close every tab that belongs to the active Fukusa session at once. |
 | `Fukusa: Expand All Collapsed Gaps` | Expand every currently collapsed unchanged gap in the active session. |
-| `Fukusa: Open Active Session Snapshot` | Open the raw historical file for the focused revision. |
+| `Fukusa: Open Active Session Snapshot` | Open the focused historical revision using the configured snapshot open mode. |
 | `Fukusa: Open Active Session Pair Diff` | Open a native two-way diff for the focused pair. |
 | `Fukusa: Reset Expanded Gaps` | Collapse any gaps that were manually reopened while `Collapse Unchanged` is active. |
 | `Fukusa: Shift Window Left` | Shift the visible 9-column window left when a session has more than 9 revisions. |
@@ -45,6 +45,7 @@ Fukusa is a VS Code extension for historical N-way compare. It opens the selecte
 | `multidiff.blame.mode` | Blame heatmap mode. |
 | `multidiff.blame.showOverviewRuler` | Show heatmap colors in the overview ruler. |
 | `multidiff.cache.maxSizeMb` | Maximum in-memory cache size. |
+| `multidiff.snapshot.openMode` | Open snapshots as virtual `multidiff:` documents or mirrored temporary files. |
 
 ## Behavior Notes
 
@@ -56,7 +57,8 @@ Fukusa is a VS Code extension for historical N-way compare. It opens the selecte
 - `Browse Revisions (Single-Tab)` opens all selected revisions in one panel, so it does not depend on editor-group orchestration or 9-column paging.
 - Command palette actions now enable and disable themselves from the active Fukusa session state, so surface-specific or gap-specific actions stop appearing as blind trial-and-error.
 - Initial alignment is line-based. Intraline changes are tracked for modified rows.
-- Scroll sync keeps the top visible aligned row exactly matched across all visible compare columns.
+- Native scroll sync follows the top visible aligned row on a best-effort, line-based basis.
+- Inside native `multidiff-session-doc` editors, `Ctrl+Up` and `Ctrl+Down` still use VS Code's native scroll behavior first, then Fukusa immediately syncs the other visible columns to the resulting aligned row.
 - Closing any tracked session tab closes the rest of that session's tabs too.
 - Visible pair overlays follow the selected pair projection; the focused pair also gets full line and intraline emphasis.
 - The single-tab panel keeps all revisions in one scroll container, updates from session view models instead of rebuilding the whole document, and virtualizes rows so larger sessions stay usable.
@@ -69,7 +71,8 @@ Fukusa is a VS Code extension for historical N-way compare. It opens the selecte
 - The single-tab panel toolbar also exposes `Expand All Gaps` and `Reset Gaps`, which call the same commands used by native-editor sessions.
 - The sessions tree now shows each session's surface mode, pair projection, and whether unchanged rows are collapsed.
 - The sessions tree also exposes direct session actions, so you can reveal, switch surface, or close a specific session without first making it active.
-- Raw historical files still live in the shadow workspace and are opened directly as `file` scheme documents when you use snapshot or pair-diff escape hatches.
+- Snapshot commands respect `multidiff.snapshot.openMode`, so the focused historical revision opens either as a virtual `multidiff:` document or a mirrored temp file.
+- Raw historical files still live in the shadow workspace, and pair-diff escape hatches still open those `file` scheme documents directly.
 
 ## Development
 

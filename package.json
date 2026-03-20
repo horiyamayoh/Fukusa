@@ -185,6 +185,16 @@
         "category": "Fukusa"
       },
       {
+        "command": "multidiff.internal.scrollAlignedUp",
+        "title": "Scroll Aligned Up",
+        "category": "Fukusa"
+      },
+      {
+        "command": "multidiff.internal.scrollAlignedDown",
+        "title": "Scroll Aligned Down",
+        "category": "Fukusa"
+      },
+      {
         "command": "multidiff.internal.shiftWindowLeft",
         "title": "Shift Window Left",
         "category": "Fukusa"
@@ -233,6 +243,14 @@
         },
         {
           "command": "multidiff.internal.resetExpandedGaps",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.scrollAlignedUp",
+          "when": "false"
+        },
+        {
+          "command": "multidiff.internal.scrollAlignedDown",
           "when": "false"
         },
         {
@@ -317,11 +335,28 @@
       "explorer/context": [
         {
           "command": "multidiff.browseRevisions",
-          "group": "3_compare",
+          "group": "3_compare@1",
+          "when": "resourceScheme == file"
+        },
+        {
+          "command": "multidiff.browseRevisionsSingleTab",
+          "group": "3_compare@2",
           "when": "resourceScheme == file"
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "multidiff.internal.scrollAlignedUp",
+        "key": "ctrl+up",
+        "when": "resourceScheme == multidiff-session-doc && editorTextFocus"
+      },
+      {
+        "command": "multidiff.internal.scrollAlignedDown",
+        "key": "ctrl+down",
+        "when": "resourceScheme == multidiff-session-doc && editorTextFocus"
+      }
+    ],
     "views": {
       "explorer": [
         {
@@ -355,6 +390,15 @@
           "default": 512,
           "minimum": 16,
           "description": "Maximum in-memory cache size in MiB."
+        },
+        "multidiff.snapshot.openMode": {
+          "type": "string",
+          "default": "virtual",
+          "enum": [
+            "virtual",
+            "tempFile"
+          ],
+          "markdownDescription": "How Fukusa opens raw revision snapshots. `virtual` keeps the synthetic `multidiff:` URI, while `tempFile` mirrors the snapshot to a temporary file for compatibility-sensitive workflows."
         }
       }
     }

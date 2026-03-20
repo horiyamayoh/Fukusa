@@ -65,6 +65,37 @@ suite('Unit: CompareSurfaceCoordinator', () => {
     assert.strictEqual(sessionService.getSession(session.id)?.surfaceMode, 'native');
   });
 
+  test('restores the previous surface when opening the target surface fails', async () => {
+    const sessionService = new SessionService();
+    const session = sessionService.createBrowserSession(createSession('surface-switch-open-fail', createRevisions(3), 'native'));
+    const nativeOpenSession = sinon.stub().resolves();
+    const nativeCloseSurface = sinon.stub().resolves(true);
+    const panelOpenSession = sinon.stub().rejects(new Error('panel unavailable'));
+    const nativeController = {
+      openSession: nativeOpenSession,
+      revealSession: sinon.stub().resolves(),
+      closeSessionSurface: nativeCloseSurface,
+      closeActiveSession: sinon.stub().resolves(),
+      shiftWindow: sinon.stub().resolves()
+    } as unknown as ConstructorParameters<typeof CompareSurfaceCoordinator>[1];
+    const panelController = {
+      openSession: panelOpenSession,
+      revealSession: sinon.stub().resolves(),
+      closeSessionSurface: sinon.stub().resolves(true),
+      closeActiveSession: sinon.stub().resolves()
+    } as unknown as ConstructorParameters<typeof CompareSurfaceCoordinator>[2];
+    const coordinator = new CompareSurfaceCoordinator(sessionService, nativeController, panelController);
+
+    const switched = await coordinator.switchSessionSurface(session.id, 'panel');
+
+    assert.strictEqual(switched, false);
+    assert.strictEqual(nativeCloseSurface.callCount, 1);
+    assert.strictEqual(panelOpenSession.callCount, 1);
+    assert.strictEqual(nativeOpenSession.callCount, 1);
+    assert.strictEqual((nativeOpenSession.firstCall.args[0] as NWayCompareSession).surfaceMode, 'native');
+    assert.strictEqual(sessionService.getSession(session.id)?.surfaceMode, 'native');
+  });
+
   test('can close a non-active target session without going through the active-session path', async () => {
     const sessionService = new SessionService();
     const firstSession = sessionService.createBrowserSession(createSession('surface-close-first', createRevisions(3), 'native'));
@@ -237,6 +268,35 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
     assert.strictEqual(shifted, true);
     assert.deepStrictEqual(shiftSessionWindowStub.firstCall.args, [firstSession.id, 1]);
+  });
+
+  test('routes aligned editor scrolling through the native controller', async () => {
+    const sessionService = new SessionService();
+    sessionService.createBrowserSession(createSession('surface-scroll-aligned', createRevisions(3), 'native'));
+    const scrollActiveEditorAlignedStub = sinon.stub().resolves(true);
+    const coordinator = new CompareSurfaceCoordinator(
+      sessionService,
+      {
+        openSession: sinon.stub().resolves(),
+        revealSession: sinon.stub().resolves(),
+        closeSessionSurface: sinon.stub().resolves(true),
+        closeActiveSession: sinon.stub().resolves(),
+        shiftWindow: sinon.stub().resolves(),
+        shiftSessionWindow: sinon.stub().resolves(true),
+        scrollActiveEditorAligned: scrollActiveEditorAlignedStub
+      } as unknown as ConstructorParameters<typeof CompareSurfaceCoordinator>[1],
+      {
+        openSession: sinon.stub().resolves(),
+        revealSession: sinon.stub().resolves(),
+        closeSessionSurface: sinon.stub().resolves(true),
+        closeActiveSession: sinon.stub().resolves()
+      } as unknown as ConstructorParameters<typeof CompareSurfaceCoordinator>[2]
+    );
+
+    const scrolled = await coordinator.scrollActiveEditorAligned(1);
+
+    assert.strictEqual(scrolled, true);
+    assert.deepStrictEqual(scrollActiveEditorAlignedStub.firstCall.args, [1]);
   });
 });
 

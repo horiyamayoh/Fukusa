@@ -21,12 +21,29 @@ suite('Unit: ComparePanelDocument', () => {
     const changedRow = viewModel.rows[1];
 
     assert.deepStrictEqual(viewModel.pairs.map((pair) => pair.key), ['0:1', '0:2']);
+    assert.strictEqual(viewModel.canChangePairProjection, true);
+    assert.strictEqual(viewModel.hasActiveSnapshot, true);
+    assert.strictEqual(viewModel.hasActivePair, true);
     assert.strictEqual(viewModel.pairProjectionLabel, 'base');
     assert.strictEqual(viewModel.activePairLabel, 'A-C');
     assert.strictEqual(viewModel.columns[2].isActive, true);
     assert.strictEqual(changedRow.kind, 'data');
     assert.ok(changedRow.cells[0].classNames.includes('cell--active-modified'));
     assert.ok(changedRow.cells[2].classNames.includes('cell--active-modified'));
+  });
+
+  test('reports toolbar capabilities for a two-revision panel session', () => {
+    const alignment = new SessionAlignmentService().buildState([
+      createSource(0, 'A', 'one\ntwo'),
+      createSource(1, 'B', 'one\nTWO')
+    ]);
+    const session = createSession(alignment, 'adjacent');
+    const viewModel = buildComparePanelViewModel(session, createViewState(1, '0:1'));
+
+    assert.strictEqual(viewModel.canChangePairProjection, false);
+    assert.strictEqual(viewModel.hasActiveSnapshot, true);
+    assert.strictEqual(viewModel.hasActivePair, true);
+    assert.strictEqual(viewModel.activePairLabel, 'A-B');
   });
 
   test('builds an all-pairs panel model with every visible pair action', () => {
@@ -90,6 +107,25 @@ suite('Unit: ComparePanelDocument', () => {
     assert.strictEqual(viewModel.collapsedGapCount, 1);
     assert.strictEqual(viewModel.expandedGapCount, 1);
   });
+
+  test('keeps tiny unchanged documents expanded when they do not meet the collapse threshold', () => {
+    const alignment = new SessionAlignmentService().buildState([
+      createSource(0, 'A', '1\n2\n3'),
+      createSource(1, 'B', '1\n2\n3'),
+      createSource(2, 'C', '1\n2\n3')
+    ]);
+    const session = createSession(alignment, 'all');
+    const viewState = createViewState(1, '1:2');
+
+    const viewModel = buildComparePanelViewModel(session, viewState, {
+      collapseUnchanged: true,
+      minimumCollapsedRows: 4
+    });
+
+    assert.strictEqual(viewModel.hiddenRowCount, 0);
+    assert.strictEqual(viewModel.collapsedGapCount, 0);
+    assert.deepStrictEqual(viewModel.rows.map((row) => row.kind), ['data', 'data', 'data']);
+  });
 });
 
 function createSource(revisionIndex: number, revisionId: string, text: string) {
@@ -121,11 +157,10 @@ function createSession(
     repo,
     originalUri: vscode.Uri.file('c:/repo/src/sample.ts'),
     relativePath: 'src/sample.ts',
-    revisions: [
-      { id: 'A', shortLabel: 'A' },
-      { id: 'B', shortLabel: 'B' },
-      { id: 'C', shortLabel: 'C' }
-    ],
+    revisions: alignment.rawSnapshots.map((snapshot) => ({
+      id: snapshot.revisionId,
+      shortLabel: snapshot.revisionLabel
+    })),
     createdAt: Date.now(),
     rowCount: alignment.rowCount,
     rawSnapshots: alignment.rawSnapshots,

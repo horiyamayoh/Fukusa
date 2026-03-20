@@ -16,7 +16,7 @@
 - In `Base` mode, the active pair is `leftmost visible revision + focused revision`.
 - In `All` mode, the active pair is the nearest visible pair that contains the focused revision, with the right-side neighbor winning ties.
 - In `Custom` mode, the active pair is the nearest visible selected pair that contains the focused revision, with the right-side neighbor winning ties.
-- `Open Active Session Snapshot` uses the focused revision.
+- `Open Active Session Snapshot` uses the focused revision and respects `multidiff.snapshot.openMode`.
 - `Open Active Session Pair Diff` uses the focused pair.
 - `Change Pair Projection` updates the active session's visible pair model without reopening the session.
 - `Switch Compare Surface` moves the active session between native editors and the single-tab panel without rebuilding the session.
@@ -26,6 +26,8 @@
 - `Expand All Collapsed Gaps` reveals every currently collapsed unchanged region in the active session.
 - `Reset Expanded Gaps` reapplies the collapsed view after you manually reopened gaps.
 - Scroll synchronization treats the top visible aligned row as the source of truth, so any visible compare column can drive the others.
+- Native editor scroll sync is still best-effort and line-based for mouse wheel, scrollbar drag, and touchpad scrolling because VS Code only exposes visible-range changes, not exact pixel offsets.
+- Inside native compare documents, `Ctrl+Up` and `Ctrl+Down` keep VS Code's native scroll behavior, and Fukusa immediately synchronizes the other visible columns from the resulting top aligned row.
 - All visible projected pairs show diff edges; the focused pair also gets full line and intraline emphasis.
 - `Shift Window Left` and `Shift Window Right` move the visible page only when a session has more than 9 revisions.
 
@@ -42,7 +44,7 @@
 
 ## Single-Tab Panel
 
-- `Fukusa: Browse Revisions (Single-Tab)` opens the compare surface in one webview panel instead of multiple editor groups.
+- `Fukusa: Browse Revisions (Single-Tab)` opens the compare surface in one webview panel instead of multiple editor groups, and it is available from the Explorer context menu for file resources.
 - The panel shows all selected revisions in one scroll container.
 - Panel updates are pushed as compare view models, so refreshing the session does not rebuild the whole webview document.
 - Rows are virtualized inside the panel, which keeps larger aligned sessions responsive.
@@ -85,9 +87,11 @@ Inside that root:
 
 - `multidiff.blame.showOverviewRuler`: toggle overview ruler coloring.
 - `multidiff.cache.maxSizeMb`: cache size limit.
+- `multidiff.snapshot.openMode`: choose whether session, tree, and panel snapshot opens use virtual `multidiff:` documents or mirrored temp files.
 
 ## Current Limits
 
 - Compare targets are still one logical file across multiple revisions.
 - Alignment is line-based in the current implementation.
+- Native editor scroll sync is not pixel-exact. If you need one exact scroll surface across many revisions, use `Browse Revisions (Single-Tab)`.
 - Raw shadow trees can be expensive for very large historical revisions because Fukusa materializes full repo content for language-feature accuracy.

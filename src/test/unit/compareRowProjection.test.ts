@@ -63,4 +63,18 @@ suite('Unit: compareRowProjection', () => {
       { kind: 'gap', gapKey: '1:5', startRowNumber: 1, endRowNumber: 5, hiddenRowCount: 5 }
     ]);
   });
+
+  test('does not collapse an entirely unchanged document when it is smaller than the minimum collapsed size', () => {
+    const result = projectChangedRowNumbers(3, [], {
+      collapseUnchanged: true,
+      minimumCollapsedRows: 4
+    });
+
+    assert.strictEqual(result.hiddenRowCount, 0);
+    assert.deepStrictEqual(result.rows, [
+      { kind: 'data', rowNumber: 1 },
+      { kind: 'data', rowNumber: 2 },
+      { kind: 'data', rowNumber: 3 }
+    ]);
+  });
 });

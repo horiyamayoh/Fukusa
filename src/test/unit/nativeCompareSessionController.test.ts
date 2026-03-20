@@ -22,6 +22,7 @@ suite('Unit: NativeCompareSessionController', () => {
     const harness = createTabHarness();
     stubTabGroups(harness.tabGroups);
     stubWindowEditorsForHarness(harness);
+    stubEditorConfigNoPadding();
     const uriFactory = new UriFactory(new RepositoryRegistry());
 
     const openTextDocumentStub = sinon.stub(vscode.workspace, 'openTextDocument').callsFake((async (...args: unknown[]) => {
@@ -120,6 +121,7 @@ suite('Unit: NativeCompareSessionController', () => {
     const harness = createTabHarness();
     stubTabGroups(harness.tabGroups);
     stubWindowEditorsForHarness(harness);
+    stubEditorConfigNoPadding();
     const uriFactory = new UriFactory(new RepositoryRegistry());
 
     const openTextDocumentStub = sinon.stub(vscode.workspace, 'openTextDocument').callsFake((async (...args: unknown[]) => {
@@ -171,6 +173,103 @@ suite('Unit: NativeCompareSessionController', () => {
     assert.strictEqual(openTextDocumentStub.callCount, 9);
     assert.deepStrictEqual(bindingAfterExpand?.projectedGlobalRows, [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
     assert.ok(harness.visibleEditors.every((editor) => editor.visibleRanges[0]?.start.line === 5));
+
+    controller.dispose();
+    editorSyncController.dispose();
+  });
+
+  test('rerenders tracked native sessions when focusing a revision outside the current page', async () => {
+    const harness = createTabHarness();
+    stubTabGroups(harness.tabGroups);
+    stubWindowEditorsForHarness(harness);
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+
+    const openTextDocumentStub = sinon.stub(vscode.workspace, 'openTextDocument').callsFake((async (...args: unknown[]) => {
+      const uri = args[0] as vscode.Uri;
+      return {
+        uri,
+        lineCount: 200
+      } as vscode.TextDocument;
+    }) as unknown as typeof vscode.workspace.openTextDocument);
+    sinon.stub(vscode.window, 'showTextDocument').callsFake((async (...args: unknown[]) => {
+      const document = args[0] as vscode.TextDocument;
+      return harness.open(document, args[1] as vscode.TextDocumentShowOptions | undefined);
+    }) as unknown as typeof vscode.window.showTextDocument);
+
+    const sessionService = new SessionService();
+    const editorSyncController = new EditorSyncController(sessionService);
+    const controller = new NativeCompareSessionController(
+      sessionService,
+      uriFactory,
+      new TestLayoutController(),
+      { refresh: sinon.stub(), dispose: sinon.stub() } as unknown as DiffDecorationController,
+      editorSyncController,
+      new OutputLogger('NativeCompareSessionController Test')
+    );
+    const session = sessionService.createBrowserSession(createSession('session-focus-page', createRevisions(11), {
+      rowCount: 120
+    }));
+
+    await controller.openSession(session);
+    sessionService.setActiveRevision(session.id, 10);
+    await flushAsyncWork();
+
+    const firstCompareUri = (harness.openTabs[0]?.input as { readonly uri: vscode.Uri }).uri;
+    const firstBinding = firstCompareUri ? sessionService.getSessionFileBinding(firstCompareUri) : undefined;
+
+    assert.strictEqual(openTextDocumentStub.callCount, 18);
+    assert.strictEqual(sessionService.getSessionViewState(session.id).pageStart, 2);
+    assert.strictEqual(firstBinding?.windowStart, 2);
+    assert.strictEqual(firstBinding?.revisionIndex, 2);
+
+    controller.dispose();
+    editorSyncController.dispose();
+  });
+
+  test('does not fall back to full-row bindings when collapse hides an entirely unchanged native window', async () => {
+    const harness = createTabHarness();
+    stubTabGroups(harness.tabGroups);
+    stubWindowEditorsForHarness(harness);
+    const uriFactory = new UriFactory(new RepositoryRegistry());
+
+    const openTextDocumentStub = sinon.stub(vscode.workspace, 'openTextDocument').callsFake((async (...args: unknown[]) => {
+      const uri = args[0] as vscode.Uri;
+      return {
+        uri,
+        lineCount: 1
+      } as vscode.TextDocument;
+    }) as unknown as typeof vscode.workspace.openTextDocument);
+    sinon.stub(vscode.window, 'showTextDocument').callsFake((async (...args: unknown[]) => {
+      const document = args[0] as vscode.TextDocument;
+      return harness.open(document, args[1] as vscode.TextDocumentShowOptions | undefined);
+    }) as unknown as typeof vscode.window.showTextDocument);
+
+    const sessionService = new SessionService();
+    const editorSyncController = new EditorSyncController(sessionService);
+    const controller = new NativeCompareSessionController(
+      sessionService,
+      uriFactory,
+      new TestLayoutController(),
+      { refresh: sinon.stub(), dispose: sinon.stub() } as unknown as DiffDecorationController,
+      editorSyncController,
+      new OutputLogger('NativeCompareSessionController Test')
+    );
+    const session = sessionService.createBrowserSession(createSession(
+      'session-projection-empty',
+      createRevisions(3),
+      { rowCount: 20, changedRowNumbers: [] }
+    ));
+
+    await controller.openSession(session);
+    sessionService.toggleCollapseUnchanged(session.id);
+    await flushAsyncWork();
+
+    const compareUri = (harness.openTabs[0]?.input as { readonly uri: vscode.Uri }).uri;
+    const bindingAfterCollapse = compareUri ? sessionService.getSessionFileBinding(compareUri) : undefined;
+
+    assert.strictEqual(openTextDocumentStub.callCount, 6);
+    assert.deepStrictEqual(bindingAfterCollapse?.projectedGlobalRows, []);
+    assert.strictEqual(bindingAfterCollapse?.projectedLineMap?.documentLineToGlobalRow.size, 0);
 
     controller.dispose();
     editorSyncController.dispose();
@@ -493,4 +592,20 @@ function stubWindowEditorsForHarness(harness: {
 async function flushAsyncWork(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function stubEditorConfigNoPadding(): void {
+  sinon.stub(vscode.workspace, 'getConfiguration').callsFake(((section?: string) => ({
+    get<T>(setting: string, defaultValue?: T): T | undefined {
+      if (section === 'editor' && setting === 'stickyScroll.enabled') {
+        return false as T;
+      }
+
+      if (section === 'editor' && setting === 'cursorSurroundingLines') {
+        return 0 as T;
+      }
+
+      return defaultValue;
+    }
+  })) as typeof vscode.workspace.getConfiguration);
 }

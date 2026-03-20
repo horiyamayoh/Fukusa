@@ -73,6 +73,24 @@ suite('Unit: SessionsTreeProvider', () => {
     assert.match(String(sessionTreeItem.description), /active r0/);
     assert.doesNotMatch(String(sessionTreeItem.description), /pair /);
   });
+
+  test('resolves the latest session model when tree items are reused after session replacement', () => {
+    const sessionService = new SessionService();
+    const session = sessionService.createBrowserSession(createSession('tree-session-replaced', createRevisions(4), {
+      rowCount: 20,
+      changedRowNumbers: [10]
+    }));
+    const provider = new SessionsTreeProvider(sessionService);
+    const sessionTreeElement = provider.getChildren()[0]!;
+
+    sessionService.updatePairProjection(session.id, { mode: 'all' });
+    sessionService.updateSurfaceMode(session.id, 'panel');
+
+    const sessionTreeItem = provider.getTreeItem(sessionTreeElement);
+
+    assert.match(String(sessionTreeItem.description), /panel/);
+    assert.match(String(sessionTreeItem.description), /all/);
+  });
 });
 
 function createSession(
