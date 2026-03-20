@@ -11,6 +11,12 @@ interface PendingSyncRequest {
   readonly windowStart: number;
 }
 
+const VISIBILITY_RANGE_DEBOUNCE_MS = 32;
+const VERIFY_SCROLL_SYNC_DELAY_MS = 80;
+const FEEDBACK_SUPPRESSION_WINDOW_MS = 150;
+const STICKY_SCROLL_DEFAULT_MAX_LINE_COUNT = 5;
+const CURSOR_SURROUNDING_LINES_DEFAULT = 0;
+
 export class EditorSyncController implements vscode.Disposable {
   private activeSessionId: string | undefined;
   private visibleWindow: VisibleRevisionWindow | undefined;
@@ -58,7 +64,7 @@ export class EditorSyncController implements vscode.Disposable {
 
     this.syncInProgress = true;
     try {
-      const suppressDeadline = Date.now() + 150;
+      const suppressDeadline = Date.now() + FEEDBACK_SUPPRESSION_WINDOW_MS;
       for (const editor of vscode.window.visibleTextEditors) {
         const binding = this.sessionService.getSessionFileBinding(editor.document.uri);
         if (
@@ -214,7 +220,7 @@ export class EditorSyncController implements vscode.Disposable {
     this.clearPendingHandle();
     this.pendingHandle = setTimeout(() => {
       void this.flushPendingSync();
-    }, 32);
+    }, VISIBILITY_RANGE_DEBOUNCE_MS);
   }
 
   private async flushPendingSync(): Promise<void> {
@@ -270,7 +276,7 @@ export class EditorSyncController implements vscode.Disposable {
 
     this.syncInProgress = true;
     try {
-      const suppressDeadline = Date.now() + 150;
+      const suppressDeadline = Date.now() + FEEDBACK_SUPPRESSION_WINDOW_MS;
       for (const editor of vscode.window.visibleTextEditors) {
         const targetBinding = this.sessionService.getSessionFileBinding(editor.document.uri);
         if (
@@ -320,7 +326,7 @@ export class EditorSyncController implements vscode.Disposable {
 
       this.syncInProgress = true;
       try {
-        const suppressDeadline = Date.now() + 150;
+        const suppressDeadline = Date.now() + FEEDBACK_SUPPRESSION_WINDOW_MS;
         for (const editor of vscode.window.visibleTextEditors) {
           const targetBinding = this.sessionService.getSessionFileBinding(editor.document.uri);
           if (
@@ -348,7 +354,7 @@ export class EditorSyncController implements vscode.Disposable {
       } finally {
         this.syncInProgress = false;
       }
-    }, 80);
+    }, VERIFY_SCROLL_SYNC_DELAY_MS);
   }
 
   private shouldSkipReveal(editor: vscode.TextEditor, targetLine: number, generation: number): boolean {
@@ -400,8 +406,8 @@ export class EditorSyncController implements vscode.Disposable {
 function getRevealAtTopPadding(): number {
   const editorConfig = vscode.workspace.getConfiguration('editor');
   const stickyEnabled = editorConfig.get<boolean>('stickyScroll.enabled', true);
-  const maxStickyLines = editorConfig.get<number>('stickyScroll.maxLineCount', 5);
-  const cursorSurroundingLines = editorConfig.get<number>('cursorSurroundingLines', 0);
+  const maxStickyLines = editorConfig.get<number>('stickyScroll.maxLineCount', STICKY_SCROLL_DEFAULT_MAX_LINE_COUNT);
+  const cursorSurroundingLines = editorConfig.get<number>('cursorSurroundingLines', CURSOR_SURROUNDING_LINES_DEFAULT);
   return stickyEnabled
     ? Math.max(cursorSurroundingLines, maxStickyLines)
     : cursorSurroundingLines;

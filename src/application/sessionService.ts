@@ -26,6 +26,9 @@ function normalizedPathKey(uri: vscode.Uri): string {
   return uri.toString(true);
 }
 
+/**
+ * Owns the mutable compare-session registry and the derived view state for each open session.
+ */
 export class SessionService {
   private readonly sessions = new Map<string, NWayCompareSession>();
   private readonly onDidChangeSessionsEmitter = new vscode.EventEmitter<void>();
@@ -38,15 +41,22 @@ export class SessionService {
   private activeSessionId: string | undefined;
   private readonly maxSessions: number;
 
+  /** Fires when the session collection or active session changes. */
   public readonly onDidChangeSessions = this.onDidChangeSessionsEmitter.event;
+  /** Fires when the active revision or pair selection changes for a session. */
   public readonly onDidChangeSessionViewState = this.onDidChangeSessionViewStateEmitter.event;
+  /** Fires when the row projection state changes for a session. */
   public readonly onDidChangeSessionProjection = this.onDidChangeSessionProjectionEmitter.event;
+  /** Fires when a session switches compare surface or other presentation state changes. */
   public readonly onDidChangeSessionPresentation = this.onDidChangeSessionPresentationEmitter.event;
 
   public constructor(maxSessions = 20) {
     this.maxSessions = Math.max(1, maxSessions);
   }
 
+  /**
+   * Registers a new browser session and makes it the active session.
+   */
   public createBrowserSession(session: NWayCompareSession): NWayCompareSession {
     while (this.sessions.size >= this.maxSessions) {
       const oldest = [...this.sessions.values()].sort((left, right) => left.createdAt - right.createdAt)[0];
@@ -91,6 +101,9 @@ export class SessionService {
     return undefined;
   }
 
+  /**
+   * Returns the currently active browser session, if any.
+   */
   public getActiveBrowserSession(): NWayCompareSession | undefined {
     return this.activeSessionId ? this.sessions.get(this.activeSessionId) : undefined;
   }
@@ -275,6 +288,9 @@ export class SessionService {
     return updatedSession;
   }
 
+  /**
+   * Updates the compare surface mode for a session and refreshes derived selection state.
+   */
   public updateSurfaceMode(sessionId: string, surfaceMode: CompareSurfaceMode): NWayCompareSession | undefined {
     const session = this.sessions.get(sessionId);
     if (!session || session.surfaceMode === surfaceMode) {
@@ -357,6 +373,9 @@ export class SessionService {
     return session.rawSnapshots[activeRevisionIndex];
   }
 
+  /**
+   * Shifts the visible revision window for a session when native paging is enabled.
+   */
   public shiftWindow(sessionId: string, delta: number, pageSize = MAX_VISIBLE_REVISIONS): NWayCompareSession | undefined {
     const session = this.sessions.get(sessionId);
     const viewState = this.viewStates.get(sessionId);

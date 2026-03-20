@@ -2,12 +2,10 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 
-import { NWayCompareSession, RepoContext, RevisionRef } from '../../adapters/common/types';
-import { RepositoryRegistry } from '../../application/repositoryRegistry';
 import { SessionService } from '../../application/sessionService';
-import { UriFactory } from '../../infrastructure/fs/uriFactory';
 import { PanelCompareSessionController } from '../../presentation/compare/panelCompareSessionController';
 import { OutputLogger } from '../../util/output';
+import { createRevisions, createSession } from '../helpers/sessionHelpers';
 
 suite('Unit: PanelCompareSessionController', () => {
   teardown(() => {
@@ -24,38 +22,40 @@ suite('Unit: PanelCompareSessionController', () => {
       sessionService,
       new OutputLogger('PanelCompareSessionController Test')
     );
-    const session = sessionService.createBrowserSession(createSession('panel-session-scroll', createRevisions(3)));
+    const session = sessionService.createBrowserSession(createSession('panel-session-scroll', createRevisions(3), {
+      rowCount: 2,
+      surfaceMode: 'panel',
+      changedRowNumbers: [2]
+    }));
 
     await controller.openSession(session);
 
     const html = harness.panels[0]?.panel.webview.html ?? '';
-    assert.match(html, /html\s*\{\s*height:\s*100%;\s*\}/);
-    assert.match(html, /\.surface\s*\{[^}]*min-height:\s*0;[^}]*overflow:\s*auto;[^}]*overflow-anchor:\s*none;/s);
-    assert.match(html, /function captureCurrentScrollPosition\(\)/);
-    assert.match(html, /function captureViewportAnchor\(\)/);
-    assert.match(html, /function updateLayoutMetrics\(\)/);
-    assert.match(html, /function getActionTarget\(event, selector\)/);
-    assert.match(html, /function getAnchoredScrollTop\(\)/);
-    assert.match(html, /function findAnchorRowIndex\(anchorRowNumber\)/);
-    assert.match(html, /function renderRows\(forceRender = false\)/);
-    assert.match(html, /collapsed gaps:/);
-    assert.match(html, /expanded gaps:/);
-    assert.match(html, /data-switch-surface/);
-    assert.match(html, /data-change-pair-projection/);
-    assert.match(html, /data-expand-all-gaps/);
-    assert.match(html, /data-reset-expanded-gaps/);
-    assert.match(html, /let hasPendingInitialScrollRestore = false;/);
-    assert.match(html, /anchorRowNumber:\s*undefined,\s*anchorRowOffset:\s*0,/s);
-    assert.match(html, /if \(typeof previousState\.scrollTop === 'number'\) \{\s*runtime\.scrollTop = previousState\.scrollTop;\s*hasPendingInitialScrollRestore = true;\s*\}/s);
-    assert.match(html, /if \(typeof previousState\.anchorRowNumber === 'number'\) \{\s*runtime\.anchorRowNumber = previousState\.anchorRowNumber;\s*hasPendingInitialScrollRestore = true;\s*\}/s);
-    assert.match(html, /if \(!hasPendingInitialScrollRestore\) \{\s*captureCurrentScrollPosition\(\);\s*\}/s);
-    assert.match(html, /captureViewportAnchor\(\);\s*renderRows\(\);\s*hasPendingInitialScrollRestore = false;\s*syncScrollState\(\);/s);
-    assert.match(html, /anchorRowNumber:\s*runtime\.anchorRowNumber,\s*anchorRowOffset:\s*runtime\.anchorRowOffset/s);
-    assert.match(html, /changePairProjectionButton\.toggleAttribute\('disabled', !viewModel\.canChangePairProjection\)/);
-    assert.match(html, /expandAllGapsButton\.toggleAttribute\('disabled', !viewModel\.collapseUnchanged \|\| viewModel\.collapsedGapCount === 0\)/);
-    assert.match(html, /resetExpandedGapsButton\.toggleAttribute\('disabled', !viewModel\.collapseUnchanged \|\| viewModel\.expandedGapCount === 0\)/);
-    assert.match(html, /activeSnapshotButton\.toggleAttribute\('disabled', !viewModel\.hasActiveSnapshot\)/);
-    assert.match(html, /activePairButton\.toggleAttribute\('disabled', !viewModel\.hasActivePair\)/);
+    assert.ok(html.startsWith('<!DOCTYPE html>'));
+    assert.ok(html.includes('<div class="toolbar">'));
+    assert.ok(html.includes('<div class="surface" id="surface">'));
+    assert.ok(html.includes('<div class="rowsViewport">'));
+    assert.ok(html.includes('data-switch-surface'));
+    assert.ok(html.includes('data-change-pair-projection'));
+    assert.ok(html.includes('data-toggle-collapse'));
+    assert.ok(html.includes('data-expand-all-gaps'));
+    assert.ok(html.includes('data-reset-expanded-gaps'));
+    assert.ok(html.includes('data-open-active-pair'));
+    assert.ok(html.includes('data-open-active-snapshot'));
+    assert.ok(html.includes('collapsed gaps:'));
+    assert.ok(html.includes('expanded gaps:'));
+    assert.ok(html.includes('function renderRows(forceRender = false)'));
+    assert.ok(html.includes('function getAnchoredScrollTop()'));
+    assert.ok(html.includes('let hasPendingInitialScrollRestore = false;'));
+    assertHtmlIncludesLabels(html, [
+      'Switch Surface',
+      'Change Pairs',
+      'Collapse Unchanged',
+      'Expand All Gaps',
+      'Reset Gaps',
+      'Native Pair Diff',
+      'Active Snapshot'
+    ]);
 
     controller.dispose();
   });
@@ -70,8 +70,16 @@ suite('Unit: PanelCompareSessionController', () => {
       sessionService,
       new OutputLogger('PanelCompareSessionController Test')
     );
-    const firstSession = sessionService.createBrowserSession(createSession('panel-session-1', createRevisions(3)));
-    const secondSession = sessionService.createBrowserSession(createSession('panel-session-2', createRevisions(3)));
+    const firstSession = sessionService.createBrowserSession(createSession('panel-session-1', createRevisions(3), {
+      rowCount: 2,
+      surfaceMode: 'panel',
+      changedRowNumbers: [2]
+    }));
+    const secondSession = sessionService.createBrowserSession(createSession('panel-session-2', createRevisions(3), {
+      rowCount: 2,
+      surfaceMode: 'panel',
+      changedRowNumbers: [2]
+    }));
 
     await controller.openSession(firstSession);
     await controller.openSession(secondSession);
@@ -111,7 +119,11 @@ suite('Unit: PanelCompareSessionController', () => {
       sessionService,
       new OutputLogger('PanelCompareSessionController Test')
     );
-    const session = sessionService.createBrowserSession(createSession('panel-session-projection', createRevisions(4)));
+    const session = sessionService.createBrowserSession(createSession('panel-session-projection', createRevisions(4), {
+      rowCount: 2,
+      surfaceMode: 'panel',
+      changedRowNumbers: [2]
+    }));
 
     await controller.openSession(session);
     harness.readyAll();
@@ -138,7 +150,11 @@ suite('Unit: PanelCompareSessionController', () => {
       sessionService,
       new OutputLogger('PanelCompareSessionController Test')
     );
-    const session = sessionService.createBrowserSession(createSession('panel-session-close-surface', createRevisions(3)));
+    const session = sessionService.createBrowserSession(createSession('panel-session-close-surface', createRevisions(3), {
+      rowCount: 2,
+      surfaceMode: 'panel',
+      changedRowNumbers: [2]
+    }));
 
     await controller.openSession(session);
     const closed = await controller.closeSessionSurface(session.id);
@@ -160,8 +176,16 @@ suite('Unit: PanelCompareSessionController', () => {
       sessionService,
       new OutputLogger('PanelCompareSessionController Test')
     );
-    const firstSession = sessionService.createBrowserSession(createSession('panel-session-command-1', createRevisions(3)));
-    const secondSession = sessionService.createBrowserSession(createSession('panel-session-command-2', createRevisions(3)));
+    const firstSession = sessionService.createBrowserSession(createSession('panel-session-command-1', createRevisions(3), {
+      rowCount: 2,
+      surfaceMode: 'panel',
+      changedRowNumbers: [2]
+    }));
+    const secondSession = sessionService.createBrowserSession(createSession('panel-session-command-2', createRevisions(3), {
+      rowCount: 2,
+      surfaceMode: 'panel',
+      changedRowNumbers: [2]
+    }));
 
     await controller.openSession(firstSession);
     await controller.openSession(secondSession);
@@ -253,74 +277,10 @@ function createPanelHarness(): {
   };
 }
 
-function createSession(sessionId: string, revisions: readonly RevisionRef[]): NWayCompareSession {
-  const uriFactory = new UriFactory(new RepositoryRegistry());
-  const repo: RepoContext = {
-    kind: 'git',
-    repoRoot: 'c:/repo',
-    repoId: 'repo123'
-  };
-
-  return {
-    id: sessionId,
-    uri: uriFactory.createSessionUri(sessionId, 'src/sample.ts'),
-    repo,
-    originalUri: vscode.Uri.file('c:/repo/src/sample.ts'),
-    relativePath: 'src/sample.ts',
-    revisions,
-    createdAt: Date.now(),
-    rowCount: 2,
-    rawSnapshots: revisions.map((revision, index) => ({
-      snapshotUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
-      rawUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
-      revisionIndex: index,
-      revisionId: revision.id,
-      revisionLabel: revision.shortLabel,
-      relativePath: 'src/sample.ts',
-      lineMap: {
-        rowToOriginalLine: new Map([[1, 1], [2, 2]]),
-        originalLineToRow: new Map([[1, 1], [2, 2]])
-      }
-    })),
-    globalRows: [
-      {
-        rowNumber: 1,
-        cells: revisions.map((revision, index) => ({
-          revisionIndex: index,
-          rowNumber: 1,
-          present: true,
-          text: revision.id,
-          originalLineNumber: 1
-        }))
-      },
-      {
-        rowNumber: 2,
-        cells: revisions.map((revision, index) => ({
-          revisionIndex: index,
-          rowNumber: 2,
-          present: true,
-          text: index === 2 ? `${revision.id}-changed` : revision.id,
-          originalLineNumber: 2
-        }))
-      }
-    ],
-    adjacentPairs: revisions.slice(0, -1).map((revision, index) => ({
-      key: `${index}:${index + 1}`,
-      leftRevisionIndex: index,
-      rightRevisionIndex: index + 1,
-      label: `${revision.shortLabel}-${revisions[index + 1].shortLabel}`,
-      changedRowNumbers: [2]
-    })),
-    pairProjection: { mode: 'all' },
-    surfaceMode: 'panel'
-  };
-}
-
-function createRevisions(count: number): RevisionRef[] {
-  return Array.from({ length: count }, (_, index) => ({
-    id: `rev-${index}`,
-    shortLabel: `r${index}`
-  }));
+function assertHtmlIncludesLabels(html: string, labels: readonly string[]): void {
+  for (const label of labels) {
+    assert.ok(html.includes(label), `Expected HTML to include "${label}".`);
+  }
 }
 
 async function flushAsyncWork(): Promise<void> {

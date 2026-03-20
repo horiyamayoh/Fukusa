@@ -18,7 +18,7 @@ async function main(): Promise<void> {
     const vscodeExecutablePath = await download({
       cachePath,
       version: '1.96.0',
-      platform: 'win32-x64-archive'
+      platform: getDownloadPlatform()
     });
     await patchWindowsMutex(vscodeExecutablePath);
 
@@ -32,6 +32,25 @@ async function main(): Promise<void> {
     console.error(error);
     process.exit(1);
   }
+}
+
+function getDownloadPlatform(): string {
+  const arch = normalizeArch(process.arch);
+
+  switch (process.platform) {
+    case 'win32':
+      return arch === 'arm64' ? 'win32-arm64-archive' : 'win32-x64-archive';
+    case 'darwin':
+      return arch === 'arm64' ? 'darwin-arm64' : 'darwin';
+    case 'linux':
+      return arch === 'arm64' ? 'linux-arm64' : 'linux-x64';
+    default:
+      throw new Error(`Unsupported test platform: ${process.platform}-${process.arch}`);
+  }
+}
+
+function normalizeArch(arch: string): 'x64' | 'arm64' {
+  return arch === 'arm64' ? 'arm64' : 'x64';
 }
 
 async function createAliasIfNeeded(extensionDevelopmentPath: string): Promise<string> {

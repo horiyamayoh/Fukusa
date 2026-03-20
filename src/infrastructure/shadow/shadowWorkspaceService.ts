@@ -42,7 +42,11 @@ export class ShadowWorkspaceService implements vscode.Disposable {
     try {
       await fs.access(markerPath);
       return vscode.Uri.file(targetRoot);
-    } catch {
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        this.output.warn(`Failed to read shadow workspace marker ${markerPath}: ${toErrorMessage(error)}`);
+      }
+
       // Materialize on demand below.
     }
 
@@ -178,6 +182,11 @@ export class ShadowWorkspaceService implements vscode.Disposable {
 function isNonBlockingLegacyCleanupError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | undefined)?.code;
   return code === 'EPERM' || code === 'EBUSY' || code === 'ENOTEMPTY' || code === 'EACCES';
+}
+
+function isMissingFileError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === 'ENOENT';
 }
 
 function toErrorMessage(error: unknown): string {

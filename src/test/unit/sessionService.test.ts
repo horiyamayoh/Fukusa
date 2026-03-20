@@ -1,18 +1,12 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 
-import { NWayCompareSession, RepoContext, RevisionRef } from '../../adapters/common/types';
-import { RepositoryRegistry } from '../../application/repositoryRegistry';
 import { MAX_VISIBLE_REVISIONS, SessionService } from '../../application/sessionService';
+import { RepositoryRegistry } from '../../application/repositoryRegistry';
 import { UriFactory } from '../../infrastructure/fs/uriFactory';
+import { createRevisions, createSession } from '../helpers/sessionHelpers';
 
 suite('Unit: SessionService', () => {
-  const repo: RepoContext = {
-    kind: 'git',
-    repoRoot: 'c:/repo',
-    repoId: 'repo123'
-  };
-
   test('derives the active pair from the focused revision inside the visible window', () => {
     const service = new SessionService();
     const session = service.createBrowserSession(createSession('session-1', createRevisions(4)));
@@ -33,7 +27,9 @@ suite('Unit: SessionService', () => {
 
   test('derives the active pair from the visible base column in base mode', () => {
     const service = new SessionService();
-    const session = service.createBrowserSession(createSession('session-base', createRevisions(4), 'base'));
+    const session = service.createBrowserSession(createSession('session-base', createRevisions(4), {
+      pairProjection: { mode: 'base' }
+    }));
 
     service.setActiveRevision(session.id, 2);
 
@@ -42,7 +38,9 @@ suite('Unit: SessionService', () => {
 
   test('derives the active pair from the nearest visible pair in all mode', () => {
     const service = new SessionService();
-    const session = service.createBrowserSession(createSession('session-all', createRevisions(4), 'all'));
+    const session = service.createBrowserSession(createSession('session-all', createRevisions(4), {
+      pairProjection: { mode: 'all' }
+    }));
 
     service.setActiveRevision(session.id, 1);
 
@@ -169,7 +167,7 @@ suite('Unit: SessionService', () => {
 
   test('tracks shared row projection state per session', () => {
     const service = new SessionService();
-    const session = service.createBrowserSession(createSession('session-projection', createRevisions(3), 'adjacent', {
+    const session = service.createBrowserSession(createSession('session-projection', createRevisions(3), {
       rowCount: 20,
       changedRowNumbers: [10]
     }));
@@ -197,7 +195,9 @@ suite('Unit: SessionService', () => {
 
   test('separates session list changes from view state changes', () => {
     const service = new SessionService();
-    const session = service.createBrowserSession(createSession('session-events', createRevisions(11), 'all'));
+    const session = service.createBrowserSession(createSession('session-events', createRevisions(11), {
+      pairProjection: { mode: 'all' }
+    }));
     let sessionChangeCount = 0;
     const viewStateChanges: string[] = [];
     service.onDidChangeSessions(() => {
@@ -217,7 +217,7 @@ suite('Unit: SessionService', () => {
 
   test('ignores invalid or duplicate expanded gap requests', () => {
     const service = new SessionService();
-    const session = service.createBrowserSession(createSession('session-gap-validation', createRevisions(3), 'adjacent', {
+    const session = service.createBrowserSession(createSession('session-gap-validation', createRevisions(3), {
       rowCount: 20,
       changedRowNumbers: [10]
     }));
@@ -253,7 +253,7 @@ suite('Unit: SessionService', () => {
 
   test('can expand all collapsed gaps and then reset the expanded set', () => {
     const service = new SessionService();
-    const session = service.createBrowserSession(createSession('session-gap-bulk-actions', createRevisions(3), 'adjacent', {
+    const session = service.createBrowserSession(createSession('session-gap-bulk-actions', createRevisions(3), {
       rowCount: 20,
       changedRowNumbers: [10]
     }));
@@ -284,7 +284,7 @@ suite('Unit: SessionService', () => {
 
   test('updates pair projection with normalization and suppresses duplicate projection events', () => {
     const service = new SessionService();
-    const session = service.createBrowserSession(createSession('session-pair-projection', createRevisions(4), 'adjacent', {
+    const session = service.createBrowserSession(createSession('session-pair-projection', createRevisions(4), {
       rowCount: 20,
       changedRowNumbers: [10]
     }));
@@ -321,7 +321,7 @@ suite('Unit: SessionService', () => {
 
   test('clears expanded gap state when the native window shifts to a different page', () => {
     const service = new SessionService();
-    const session = service.createBrowserSession(createSession('session-shift-clears-gaps', createRevisions(11), 'adjacent', {
+    const session = service.createBrowserSession(createSession('session-shift-clears-gaps', createRevisions(11), {
       rowCount: 20,
       changedRowNumbers: [10]
     }));
@@ -369,67 +369,4 @@ suite('Unit: SessionService', () => {
     });
   });
 
-  function createSession(
-    sessionId: string,
-    revisions: readonly RevisionRef[],
-    pairProjectionMode: 'adjacent' | 'base' | 'all' | 'custom' = 'adjacent',
-    options: {
-      readonly rowCount?: number;
-      readonly changedRowNumbers?: readonly number[];
-    } = {}
-  ): NWayCompareSession {
-    const uriFactory = new UriFactory(new RepositoryRegistry());
-    const rowCount = options.rowCount ?? 1;
-    const changedRowNumbers = options.changedRowNumbers ?? [1];
-    return {
-      id: sessionId,
-      uri: uriFactory.createSessionUri(sessionId, 'src/sample.ts'),
-      repo,
-      originalUri: vscode.Uri.file('c:/repo/src/sample.ts'),
-      relativePath: 'src/sample.ts',
-      revisions,
-      createdAt: Date.now(),
-      rowCount,
-      rawSnapshots: revisions.map((revision, index) => ({
-        snapshotUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
-        rawUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
-        revisionIndex: index,
-        revisionId: revision.id,
-        revisionLabel: revision.shortLabel,
-        relativePath: 'src/sample.ts',
-        lineMap: {
-          rowToOriginalLine: new Map([[1, 1]]),
-          originalLineToRow: new Map([[1, 1]])
-        }
-      })),
-      globalRows: Array.from({ length: rowCount }, (_, rowIndex) => ({
-        rowNumber: rowIndex + 1,
-        cells: revisions.map((revision, index) => ({
-          revisionIndex: index,
-          rowNumber: rowIndex + 1,
-          present: true,
-          text: `${revision.id}-${rowIndex + 1}`,
-          originalLineNumber: rowIndex + 1
-        }))
-      })),
-      adjacentPairs: revisions.slice(0, -1).map((revision, index) => ({
-        key: `${index}:${index + 1}`,
-        leftRevisionIndex: index,
-        rightRevisionIndex: index + 1,
-        label: `${revision.shortLabel}-${revisions[index + 1].shortLabel}`,
-        changedRowNumbers
-      })),
-      pairProjection: pairProjectionMode === 'custom'
-        ? { mode: 'custom', pairKeys: ['0:2', '1:3'] }
-        : { mode: pairProjectionMode },
-      surfaceMode: 'native'
-    };
-  }
-
-  function createRevisions(count: number): RevisionRef[] {
-    return Array.from({ length: count }, (_, index) => ({
-      id: `rev-${index}`,
-      shortLabel: `r${index}`
-    }));
-  }
 });

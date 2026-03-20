@@ -1,137 +1,72 @@
 # Fukusa
 
-Fukusa is a VS Code extension for historical N-way compare. It opens the selected revisions as aligned readonly session documents ordered `A | B | C | ...`, keeps every visible column in the same global row space, and uses raw snapshots only for escape-hatch inspection.
+Fukusa is a VS Code extension for historical N-way compare. It keeps the main compare surface in native editors, supports a single-tab panel surface, and works with Git or SVN working copies.
 
-## What Changed
+## Prerequisites
 
-- The main compare surface is still a standard VS Code text editor, but its content now comes from aligned synthetic session documents instead of raw shadow files.
-- Two revisions and N revisions use the same native-editor session model.
-- A single-tab compare panel is now available as an alternative compare surface when you want one scroll container and all revisions in one place.
-- For 3 or more revisions, Fukusa lets you choose how pairs are projected inside the N-way session:
-  - `Adjacent`: `A-B`, `B-C`, `C-D`, ...
-  - `Base`: leftmost visible column against each visible revision
-  - `All`: every visible pair, `A-B`, `A-C`, `B-C`, ...
-  - `Custom`: an explicit pair list chosen from the selected revisions
-- `Open Active Session Pair Diff` remains available as a native `vscode.diff` escape hatch for the focused pair.
-- Historical raw files are materialized under repo-local shadow storage:
-  - Git: `<repo>/.fukusa-shadow/`
-  - SVN: `<repo>/.fukusa-shadow/`
+- VS Code 1.85.0 or later
+- Git CLI for Git repositories
+- SVN CLI for SVN repositories
+- The built-in `vscode.git` extension for Git-backed workflows
+- Node.js 20+ if you want to build or run the extension from source
+
+## Install
+
+### From a VSIX
+
+```powershell
+code --install-extension .\fukusa-0.0.1.vsix
+```
+
+### From source
+
+```powershell
+npm install
+npm run compile
+```
+
+Open the repository in VS Code and press `F5` to launch the extension host.
+
+## Screenshots
+
+Native multi-editor compare:
+
+![Native compare overview](media/session-overview.png)
+
+Single-tab compare panel:
+
+![Single-tab panel overview](media/snapshot-overview.png)
 
 ## Main Commands
 
-| Command | Description |
+| Command | Purpose |
 | --- | --- |
-| `Fukusa: Browse Revisions` | Pick 2 or more revisions for the current file or an Explorer file and open a native-editor N-way compare session. |
-| `Fukusa: Browse Revisions (Single-Tab)` | Pick revisions for the current file or an Explorer file and open the N-way compare inside one webview panel with a single scroll surface. |
-| `Fukusa: Change Pair Projection` | Switch the active session between `Adjacent`, `Base`, `All`, or `Custom` pair projection without rebuilding the session. |
-| `Fukusa: Switch Compare Surface` | Move the active session between native editors and the single-tab panel without rebuilding the compare model. |
-| `Fukusa: Close Active Session` | Close every tab that belongs to the active Fukusa session at once. |
-| `Fukusa: Expand All Collapsed Gaps` | Expand every currently collapsed unchanged gap in the active session. |
-| `Fukusa: Open Active Session Snapshot` | Open the focused historical revision using the configured snapshot open mode. |
+| `Fukusa: Browse Revisions` | Open a native-editor compare session for 2 or more revisions. |
+| `Fukusa: Browse Revisions (Single-Tab)` | Open the same session model in one webview panel. |
+| `Fukusa: Change Pair Projection` | Switch between `Adjacent`, `Base`, `All`, and `Custom`. |
+| `Fukusa: Switch Compare Surface` | Move the active session between native editors and the panel. |
+| `Fukusa: Toggle Collapse Unchanged` | Toggle shared row projection for the active session. |
+| `Fukusa: Open Active Session Snapshot` | Open the focused historical revision. |
 | `Fukusa: Open Active Session Pair Diff` | Open a native two-way diff for the focused pair. |
-| `Fukusa: Reset Expanded Gaps` | Collapse any gaps that were manually reopened while `Collapse Unchanged` is active. |
-| `Fukusa: Shift Window Left` | Shift the visible 9-column window left when a session has more than 9 revisions. |
-| `Fukusa: Shift Window Right` | Shift the visible 9-column window right when a session has more than 9 revisions. |
-| `Fukusa: Toggle Collapse Unchanged` | Toggle the shared row projection for the active session. |
-| `Fukusa: Toggle Blame Heatmap` | Toggle line-age heatmap decorations. |
-| `Fukusa: Warm Cache for Current File` | Preload recent snapshot history for the current file. |
-| `Fukusa: Clear Cache for Current Repository` | Clear cache entries for the current repository. |
-| `Fukusa: Clear All Cache` | Clear all Fukusa caches. |
 
 ## Settings
 
-| Setting | Description |
+| Setting | Purpose |
 | --- | --- |
-| `multidiff.blame.mode` | Blame heatmap mode. |
-| `multidiff.blame.showOverviewRuler` | Show heatmap colors in the overview ruler. |
-| `multidiff.cache.maxSizeMb` | Maximum in-memory cache size. |
-| `multidiff.snapshot.openMode` | Open snapshots as virtual `multidiff:` documents or mirrored temporary files. |
-
-## Behavior Notes
-
-- Revision selection is normalized to oldest-to-newest before the session is built.
-- When you open 3 or more revisions, Fukusa asks whether the session should use `Adjacent`, `Base`, `All`, or `Custom` pair projection.
-- After a session is open, `Change Pair Projection` lets you reproject visible pairs in place instead of rebuilding the compare session.
-- `Switch Compare Surface` lets you move the active session between the single-tab panel and native editors while keeping the same revisions, pair projection, and row projection state.
-- `Custom...` opens a second picker where you choose the exact revision pairs to project; adjacent pairs are preselected as the starting point.
-- `Browse Revisions (Single-Tab)` opens all selected revisions in one panel, so it does not depend on editor-group orchestration or 9-column paging.
-- Command palette actions now enable and disable themselves from the active Fukusa session state, so surface-specific or gap-specific actions stop appearing as blind trial-and-error.
-- Initial alignment is line-based. Intraline changes are tracked for modified rows.
-- Native scroll sync follows the top visible aligned row on a best-effort, line-based basis.
-- Inside native `multidiff-session-doc` editors, `Ctrl+Up` and `Ctrl+Down` still use VS Code's native scroll behavior first, then Fukusa immediately syncs the other visible columns to the resulting aligned row.
-- Closing any tracked session tab closes the rest of that session's tabs too.
-- Visible pair overlays follow the selected pair projection; the focused pair also gets full line and intraline emphasis.
-- The single-tab panel keeps all revisions in one scroll container, updates from session view models instead of rebuilding the whole document, and virtualizes rows so larger sessions stay usable.
-- `Toggle Collapse Unchanged` now drives one session-level row projection state shared by native editors and the single-tab panel.
-- `Expand All Collapsed Gaps` and `Reset Expanded Gaps` work against that shared row projection state, so native editors can reveal or re-collapse unchanged regions without switching to the panel first.
-- The single-tab panel can reopen individual collapsed gaps on demand.
-- The single-tab panel uses native snapshot / native pair diff as escape hatches.
-- The single-tab panel toolbar also exposes `Change Pairs`, so projection changes do not require leaving the panel.
-- The single-tab panel toolbar also exposes `Switch Surface`, so you can move the active session back to native editors without reopening it from scratch.
-- The single-tab panel toolbar also exposes `Expand All Gaps` and `Reset Gaps`, which call the same commands used by native-editor sessions.
-- The sessions tree now shows each session's surface mode, pair projection, and whether unchanged rows are collapsed.
-- The sessions tree also exposes direct session actions, so you can reveal, switch surface, or close a specific session without first making it active.
-- Snapshot commands respect `multidiff.snapshot.openMode`, so the focused historical revision opens either as a virtual `multidiff:` document or a mirrored temp file.
-- Raw historical files still live in the shadow workspace, and pair-diff escape hatches still open those `file` scheme documents directly.
-- Syntax highlighting on aligned session documents works directly, but definition / hover / references remain best-effort unless you open a mirrored temp snapshot.
-
-## Architecture
-
-Fukusa follows a layered architecture with manual dependency injection wired in `extension.ts`:
-
-```
-extension.ts                    Entry point / DI wiring
-├── commands/                   Command handlers (factory function pattern)
-├── presentation/               UI layer
-│   ├── native/                 Native editor surface (tabs, scroll sync, decorations)
-│   ├── compare/                Panel (Webview) surface
-│   ├── decorations/            Blame heatmap decorations
-│   └── views/                  Tree views (sessions, cache)
-├── application/                Business logic
-│   ├── sessionService.ts       Central session state (event-driven)
-│   ├── nWayAlignmentEngine.ts  Core N-way alignment algorithm
-│   ├── comparePairing.ts       Pair projection (adjacent/base/all/custom)
-│   └── ...
-├── infrastructure/             Cache, virtual FS, shadow workspace, temp files
-└── adapters/                   VCS adapters (Git, SVN)
-```
-
-Key design principles:
-
-- **Event-driven reactivity**: `SessionService` emits 4 event types; controllers, tree views, and context keys react.
-- **Dual surface**: Native editors (multiple tabs) and Panel (single webview) share the same compare model via `CompareSurfaceCoordinator`.
-- **Global row space**: All editors synchronize through a shared global row number space.
-- **Immutable session + mutable view state**: `NWayCompareSession` is immutable; `SessionViewState` is mutable and lives in `SessionService`.
-
-All domain types are defined in `src/adapters/common/types.ts`.
-
-## Development
-
-```bash
-npm run compile        # Clear out/ and compile TypeScript
-npm test               # Run all tests (unit + integration)
-npm run test:unit      # Run unit tests only
-npm run test:integration  # Run integration tests only
-npm run lint           # ESLint
-npm run package:vsix   # Create .vsix package (pre-release)
-```
-
-- Build uses pure `tsc` (no webpack/esbuild).
-- Tests run inside a downloaded VS Code instance via `@vscode/test-electron`.
-- Unit tests: Mocha TDD style (`suite`/`test`), suite names prefixed with `Unit:`.
-- Integration tests: suite names prefixed with `Integration:`.
-- `npm run compile` clears `out/` first so stale generated files do not survive refactors.
-- For AI agent developers, see `CLAUDE.md` for a comprehensive guide.
+| `multidiff.blame.mode` | Selects the blame heatmap mode. |
+| `multidiff.blame.showOverviewRuler` | Shows blame colors in the overview ruler. |
+| `multidiff.cache.maxSizeMb` | Limits in-memory cache size in MiB. |
+| `multidiff.snapshot.openMode` | Chooses virtual `multidiff:` documents or mirrored temp files for snapshots. |
 
 ## Documentation
 
-| File | Content |
+| File | Notes |
 | --- | --- |
-| `CLAUDE.md` | AI agent development guide |
-| `CHANGELOG.md` | Version history |
-| `PUBLISHING.md` | VS Code Marketplace publishing checklist |
-| `docs/SPEC.md` | Comprehensive specification (reverse-engineered) |
-| `docs/USER_GUIDE.md` | End-user guide |
-| `docs/Fukusa_design_v0.2.md` | Original design document (Native Editor First) |
-| `docs/Fukusa_nway_redesign_plan_2026-03-15.md` | N-way redesign plan |
-| `docs/adr_003_*` to `docs/adr_010_*` | Architecture Decision Records |
+| `CLAUDE.md` | Agent-facing development guide. |
+| `CHANGELOG.md` | Release history in Keep a Changelog format. |
+| `PUBLISHING.md` | Marketplace publishing checklist. |
+| `docs/USER_GUIDE.md` | End-user guide. |
+| `docs/SPEC.md` | Reverse-engineered specification. |
+| `docs/archive/Fukusa_design_v0.2.md` | Deprecated design document archive. |
+| `docs/adr_001_*` to `docs/adr_010_*` | Architecture Decision Records. |
+

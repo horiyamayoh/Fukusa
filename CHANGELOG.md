@@ -1,61 +1,40 @@
-# 変更履歴
+# Changelog
 
-このファイルには Fukusa の主な変更を記録します。
+All notable changes to this project will be documented in this file.
 
-## 0.0.1
+This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-初回 pre-release。
+## [Unreleased]
 
-### 初期実装 (3d67ac7)
+### Added
 
-- `multidiff:` 仮想ファイルシステムによる readonly historical snapshot 表示を追加
-- native diff editor を使った 2 revision 比較を追加
-- adjacent / base モードの Fukusa session を追加
-- window shift による可視 pair の切り替えを追加
-- blame heatmap の decoration / overview ruler / hover 表示を追加
-- snapshot / history / blame の memory cache / persistent cache を追加
-- Git / SVN 両対応の repository adapter を追加
-- `tempFile` ベースの compatibility fallback を追加
-- unit test / integration test / VSIX packaging の検証フローを追加
+- Placeholder for future changes.
 
-### キャッシュ改善 (11f9446)
+## [0.0.1] - 2026-03-15
 
-- snapshot キャッシュの検証ロジックを改善
+### Added
 
-### プロジェクト名変更 (4c5ea79)
+- Read-only historical snapshot documents through the `multidiff:` file system scheme.
+- Native two-revision compare on standard VS Code editors.
+- N-way compare sessions with adjacent and base pair projections.
+- Window shifting for visible revision groups.
+- Blame heatmap decorations, overview ruler coloring, and hover details.
+- Memory cache and persistent cache support for snapshots, history, and blame data.
+- Git and SVN repository adapters.
+- `tempFile` compatibility fallback for snapshot opening.
+- Unit tests, integration tests, and VSIX packaging support.
 
-- MultiDiffViewer から Fukusa にリネーム
+### Changed
 
-### ネイティブエディタファースト (ba56fb7)
+- Initial project rename from MultiDiffViewer to Fukusa.
+- The compare surface became native-editor-first.
+- The session model introduced aligned synthetic session documents.
 
-- compare surface をネイティブエディタに統一
-- aligned synthetic session document (`multidiff-session-doc://`) モデルを導入
+### Fixed
 
-### アライン済みネイティブセッション (539c636)
+- Scroll synchronization now compensates for VS Code sticky scroll padding.
+- Snapshot cache reads repair invalid index entries instead of failing hard.
 
-- N-way alignment engine (`nWayAlignmentEngine.ts`) を導入
-- weighted monotonic line matching による replacement hunk 精度向上
-- `SessionService` をイベント駆動モデルに再設計
-- `NWayCompareSession` を不変モデル、`SessionViewState` を可変ビューステートに分離
-- スクロール同期 (`EditorSyncController`) の debounce / verify / feedback suppression 実装
-- diff decoration (border, background, intraline) を追加
+[Unreleased]: https://github.com/horiyamayoh/MultiDiffViewer/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/horiyamayoh/MultiDiffViewer/releases/tag/v0.0.1
 
-### パネルサーフェス・セッション射影 (4c0cbda)
-
-- single-tab compare panel (`PanelCompareSessionController`) を本番導入
-- `CompareSurfaceCoordinator` によるネイティブ/パネル切替
-- pair projection モデル (adjacent / base / all / custom) を導入
-- row projection layer (未変更行折りたたみ) を導入
-- `sessionViewport.ts` でビューポート計算を一元化
-- `Browse Revisions (Single-Tab)` コマンドを追加
-- `Change Pair Projection`, `Switch Compare Surface` コマンドを追加
-- `Expand All Collapsed Gaps`, `Reset Expanded Gaps` コマンドを追加
-- sessions tree にセッションアクション (reveal, switch, close) を追加
-
-### 仕様書追加 (d819c16)
-
-- `docs/SPEC.md` にコードベースから逆引きした包括的仕様書を追加
-
-### スクロール同期修正 (c570178)
-
-- VS Code sticky scroll のパディング補正を追加し、スクロール同期の精度を改善

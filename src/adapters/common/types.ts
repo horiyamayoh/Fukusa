@@ -1,22 +1,30 @@
 import * as vscode from 'vscode';
 
+/** Supported repository backends. */
 export type RepositoryKind = 'git' | 'svn';
+/** Cached value storage format. */
 export type CacheValueKind = 'binary' | 'json';
+/** Per-cell change classification used by aligned rows. */
 export type CompareChangeKind = 'added' | 'removed' | 'modified';
+/** Available projection strategies for N-way pair overlays. */
 export type ComparePairProjectionMode = 'adjacent' | 'base' | 'all' | 'custom';
+/** Compare surface available to a session. */
 export type CompareSurfaceMode = 'native' | 'panel';
 
+/** Pair projection configuration for a session. */
 export interface ComparePairProjection {
   readonly mode: ComparePairProjectionMode;
   readonly pairKeys?: readonly string[];
 }
 
+/** Repository identity and root path metadata. */
 export interface RepoContext {
   readonly kind: RepositoryKind;
   readonly repoRoot: string;
   readonly repoId: string;
 }
 
+/** Revision metadata used to build compare sessions. */
 export interface RevisionRef {
   readonly id: string;
   readonly shortLabel: string;
@@ -27,6 +35,7 @@ export interface RevisionRef {
   readonly relativePath?: string;
 }
 
+/** Resolved source file in repository space. */
 export interface SnapshotResource {
   readonly repo: RepoContext;
   readonly relativePath: string;
@@ -35,18 +44,21 @@ export interface SnapshotResource {
   readonly title: string;
 }
 
+/** Pair of snapshot resources for two-way compare operations. */
 export interface DiffPair {
   readonly left: SnapshotResource;
   readonly right: SnapshotResource;
   readonly title: string;
 }
 
+/** Intraline change segment for highlighted text diffs. */
 export interface IntralineSegment {
   readonly startCharacter: number;
   readonly endCharacter: number;
   readonly kind: 'added' | 'removed';
 }
 
+/** Change details attached to an aligned line. */
 export interface AlignedLineChange {
   readonly kind: CompareChangeKind;
   readonly counterpartText?: string;
@@ -54,6 +66,7 @@ export interface AlignedLineChange {
   readonly intralineSegments: readonly IntralineSegment[];
 }
 
+/** Single line in an aligned compare surface. */
 export interface AlignedLine {
   readonly rowNumber: number;
   readonly present: boolean;
@@ -65,11 +78,13 @@ export interface AlignedLine {
   readonly blameInfo?: BlameLineInfo;
 }
 
+/** Bidirectional lookup between document lines and original line numbers. */
 export interface AlignedLineMap {
   readonly rowToOriginalLine: ReadonlyMap<number, number>;
   readonly originalLineToRow: ReadonlyMap<number, number>;
 }
 
+/** Snapshot document payload used by aligned session editors. */
 export interface CompareSourceDocument {
   readonly revisionIndex: number;
   readonly revisionId: string;
@@ -81,15 +96,18 @@ export interface CompareSourceDocument {
   readonly blameLines?: readonly BlameLineInfo[];
 }
 
+/** Aligned row cell for a specific revision column. */
 export interface GlobalRowCell extends AlignedLine {
   readonly revisionIndex: number;
 }
 
+/** One canonical row across every visible revision. */
 export interface GlobalRow {
   readonly rowNumber: number;
   readonly cells: readonly GlobalRowCell[];
 }
 
+/** Projection overlay for a visible revision pair. */
 export interface ComparePairOverlay {
   readonly leftRevisionIndex: number;
   readonly rightRevisionIndex: number;
@@ -98,8 +116,10 @@ export interface ComparePairOverlay {
   readonly changedRowNumbers: readonly number[];
 }
 
+/** Back-compat alias for pair overlays. */
 export type AdjacentPairOverlay = ComparePairOverlay;
 
+/** Raw historical snapshot content for one revision. */
 export interface RawSnapshot {
   readonly snapshotUri: vscode.Uri;
   readonly rawUri: vscode.Uri;
@@ -110,6 +130,7 @@ export interface RawSnapshot {
   readonly lineMap: AlignedLineMap;
 }
 
+/** Cached alignment result for an N-way session. */
 export interface CompareAlignmentState {
   readonly rowCount: number;
   readonly rawSnapshots: readonly RawSnapshot[];
@@ -117,12 +138,14 @@ export interface CompareAlignmentState {
   readonly adjacentPairs: readonly AdjacentPairOverlay[];
 }
 
+/** Visible revision window for native compare paging. */
 export interface VisibleRevisionWindow {
   readonly startRevisionIndex: number;
   readonly endRevisionIndex: number;
   readonly rawSnapshots: readonly RawSnapshot[];
 }
 
+/** Immutable compare session model. */
 export interface NWayCompareSession {
   readonly id: string;
   readonly uri: vscode.Uri;
@@ -139,22 +162,26 @@ export interface NWayCompareSession {
   readonly surfaceMode: CompareSurfaceMode;
 }
 
+/** Mutable selection state for one session. */
 export interface SessionViewState {
   readonly activeRevisionIndex: number;
   readonly activePairKey?: string;
   readonly pageStart: number;
 }
 
+/** Mapping between displayed document lines and global row numbers. */
 export interface SessionProjectedLineMap {
   readonly documentLineToGlobalRow: ReadonlyMap<number, number>;
   readonly globalRowToDocumentLine: ReadonlyMap<number, number>;
 }
 
+/** Row projection state shared between native and panel surfaces. */
 export interface SessionRowProjectionState {
   readonly collapseUnchanged: boolean;
   readonly expandedGapKeys: readonly string[];
 }
 
+/** Binding for a virtual or native editor that belongs to a session. */
 export interface NativeEditorBinding {
   readonly sessionId: string;
   readonly revisionIndex: number;
@@ -168,10 +195,14 @@ export interface NativeEditorBinding {
   readonly projectedLineMap?: SessionProjectedLineMap;
 }
 
+/** Historical snapshot alias used by older call sites. */
 export type CompareSnapshot = RawSnapshot;
+/** Document numbering space for session-backed editors. */
 export type SessionLineNumberSpace = 'original' | 'globalRow';
+/** Binding alias used by session file consumers. */
 export type SessionFileBinding = NativeEditorBinding;
 
+/** Blame metadata attached to a line. */
 export interface BlameLineInfo {
   readonly lineNumber: number;
   readonly revision: string;
@@ -181,6 +212,7 @@ export interface BlameLineInfo {
   readonly timestamp?: number;
 }
 
+/** Parsed `multidiff:` snapshot URI. */
 export interface ParsedSnapshotUri {
   readonly kind: RepositoryKind;
   readonly repoId: string;
@@ -189,11 +221,13 @@ export interface ParsedSnapshotUri {
   readonly revision: string;
 }
 
+/** Parsed session URI. */
 export interface ParsedSessionUri {
   readonly sessionId: string;
   readonly relativePath: string;
 }
 
+/** Parsed aligned session document URI. */
 export interface ParsedSessionDocumentUri {
   readonly sessionId: string;
   readonly windowStart: number;
@@ -202,6 +236,7 @@ export interface ParsedSessionDocumentUri {
   readonly revisionLabel: string;
 }
 
+/** Repository resource resolved from a user-selected URI. */
 export interface ResolvedResource {
   readonly repo: RepoContext;
   readonly relativePath: string;
@@ -209,6 +244,7 @@ export interface ResolvedResource {
   readonly revision?: string;
 }
 
+/** Stored cache metadata for one entry. */
 export interface CacheEntryMetadata {
   readonly key: string;
   readonly namespace: string;
@@ -218,6 +254,7 @@ export interface CacheEntryMetadata {
   readonly updatedAt: number;
 }
 
+/** Cache summary row used by the cache tree. */
 export interface CacheOverviewItem {
   readonly repoId: string;
   readonly size: number;

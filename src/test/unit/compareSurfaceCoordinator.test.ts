@@ -2,11 +2,10 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 
-import { NWayCompareSession, RepoContext, RevisionRef } from '../../adapters/common/types';
-import { RepositoryRegistry } from '../../application/repositoryRegistry';
+import { NWayCompareSession } from '../../adapters/common/types';
 import { SessionService } from '../../application/sessionService';
-import { UriFactory } from '../../infrastructure/fs/uriFactory';
 import { CompareSurfaceCoordinator } from '../../presentation/compare/compareSurfaceCoordinator';
+import { createRevisions, createSession } from '../helpers/sessionHelpers';
 
 suite('Unit: CompareSurfaceCoordinator', () => {
   teardown(() => {
@@ -15,7 +14,9 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
   test('switches the active session from panel to native without deleting the session', async () => {
     const sessionService = new SessionService();
-    const session = sessionService.createBrowserSession(createSession('surface-switch', createRevisions(3), 'panel'));
+    const session = sessionService.createBrowserSession(createSession('surface-switch', createRevisions(3), {
+      surfaceMode: 'panel'
+    }));
     const nativeOpenSession = sinon.stub().resolves();
     const panelCloseSurface = sinon.stub().resolves(true);
     const nativeController = {
@@ -41,7 +42,7 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
   test('does not switch surfaces when the current surface fails to close', async () => {
     const sessionService = new SessionService();
-    const session = sessionService.createBrowserSession(createSession('surface-switch-fail', createRevisions(3), 'native'));
+    const session = sessionService.createBrowserSession(createSession('surface-switch-fail', createRevisions(3)));
     const nativeCloseSurface = sinon.stub().resolves(false);
     const panelOpenSession = sinon.stub().resolves();
     const nativeController = {
@@ -67,7 +68,7 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
   test('restores the previous surface when opening the target surface fails', async () => {
     const sessionService = new SessionService();
-    const session = sessionService.createBrowserSession(createSession('surface-switch-open-fail', createRevisions(3), 'native'));
+    const session = sessionService.createBrowserSession(createSession('surface-switch-open-fail', createRevisions(3)));
     const nativeOpenSession = sinon.stub().resolves();
     const nativeCloseSurface = sinon.stub().resolves(true);
     const panelOpenSession = sinon.stub().rejects(new Error('panel unavailable'));
@@ -98,8 +99,10 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
   test('can close a non-active target session without going through the active-session path', async () => {
     const sessionService = new SessionService();
-    const firstSession = sessionService.createBrowserSession(createSession('surface-close-first', createRevisions(3), 'native'));
-    const secondSession = sessionService.createBrowserSession(createSession('surface-close-second', createRevisions(3), 'panel'));
+    const firstSession = sessionService.createBrowserSession(createSession('surface-close-first', createRevisions(3)));
+    const secondSession = sessionService.createBrowserSession(createSession('surface-close-second', createRevisions(3), {
+      surfaceMode: 'panel'
+    }));
     const nativeController = {
       openSession: sinon.stub().resolves(),
       revealSession: sinon.stub().resolves(),
@@ -126,8 +129,10 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
   test('switches the requested target session surface without relying on the active session', async () => {
     const sessionService = new SessionService();
-    const firstSession = sessionService.createBrowserSession(createSession('surface-switch-first', createRevisions(3), 'native'));
-    const secondSession = sessionService.createBrowserSession(createSession('surface-switch-second', createRevisions(3), 'panel'));
+    const firstSession = sessionService.createBrowserSession(createSession('surface-switch-first', createRevisions(3)));
+    const secondSession = sessionService.createBrowserSession(createSession('surface-switch-second', createRevisions(3), {
+      surfaceMode: 'panel'
+    }));
     const nativeOpenSession = sinon.stub().resolves();
     const panelCloseSurface = sinon.stub().resolves(true);
     const nativeController = {
@@ -156,7 +161,10 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
   test('expands all collapsed gaps for the active session', () => {
     const sessionService = new SessionService();
-    const session = sessionService.createBrowserSession(createProjectedSession('surface-expand-gaps', createRevisions(3)));
+    const session = sessionService.createBrowserSession(createSession('surface-expand-gaps', createRevisions(3), {
+      rowCount: 20,
+      changedRowNumbers: [10]
+    }));
     sessionService.toggleCollapseUnchanged(session.id);
     const coordinator = new CompareSurfaceCoordinator(
       sessionService,
@@ -184,7 +192,10 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
   test('resets expanded gaps for the active session', () => {
     const sessionService = new SessionService();
-    const session = sessionService.createBrowserSession(createProjectedSession('surface-reset-gaps', createRevisions(3)));
+    const session = sessionService.createBrowserSession(createSession('surface-reset-gaps', createRevisions(3), {
+      rowCount: 20,
+      changedRowNumbers: [10]
+    }));
     sessionService.toggleCollapseUnchanged(session.id);
     sessionService.expandProjectionGap(session.id, '14:20');
     const coordinator = new CompareSurfaceCoordinator(
@@ -213,8 +224,14 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
   test('toggles collapse projection for a targeted session', () => {
     const sessionService = new SessionService();
-    const firstSession = sessionService.createBrowserSession(createProjectedSession('surface-toggle-first', createRevisions(3)));
-    sessionService.createBrowserSession(createProjectedSession('surface-toggle-second', createRevisions(3)));
+    const firstSession = sessionService.createBrowserSession(createSession('surface-toggle-first', createRevisions(3), {
+      rowCount: 20,
+      changedRowNumbers: [10]
+    }));
+    sessionService.createBrowserSession(createSession('surface-toggle-second', createRevisions(3), {
+      rowCount: 20,
+      changedRowNumbers: [10]
+    }));
     const coordinator = new CompareSurfaceCoordinator(
       sessionService,
       {
@@ -243,8 +260,10 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
   test('shifts the requested target native session window without relying on the active session', async () => {
     const sessionService = new SessionService();
-    const firstSession = sessionService.createBrowserSession(createSession('surface-shift-first', createRevisions(11), 'native'));
-    sessionService.createBrowserSession(createSession('surface-shift-second', createRevisions(3), 'panel'));
+    const firstSession = sessionService.createBrowserSession(createSession('surface-shift-first', createRevisions(11)));
+    sessionService.createBrowserSession(createSession('surface-shift-second', createRevisions(3), {
+      surfaceMode: 'panel'
+    }));
     const shiftSessionWindowStub = sinon.stub().resolves(true);
     const coordinator = new CompareSurfaceCoordinator(
       sessionService,
@@ -272,7 +291,7 @@ suite('Unit: CompareSurfaceCoordinator', () => {
 
   test('routes aligned editor scrolling through the native controller', async () => {
     const sessionService = new SessionService();
-    sessionService.createBrowserSession(createSession('surface-scroll-aligned', createRevisions(3), 'native'));
+    sessionService.createBrowserSession(createSession('surface-scroll-aligned', createRevisions(3)));
     const scrollActiveEditorAlignedStub = sinon.stub().resolves(true);
     const coordinator = new CompareSurfaceCoordinator(
       sessionService,
@@ -299,116 +318,3 @@ suite('Unit: CompareSurfaceCoordinator', () => {
     assert.deepStrictEqual(scrollActiveEditorAlignedStub.firstCall.args, [1]);
   });
 });
-
-function createSession(
-  sessionId: string,
-  revisions: readonly RevisionRef[],
-  surfaceMode: 'native' | 'panel'
-): NWayCompareSession {
-  const uriFactory = new UriFactory(new RepositoryRegistry());
-  const repo: RepoContext = {
-    kind: 'git',
-    repoRoot: 'c:/repo',
-    repoId: 'repo123'
-  };
-
-  return {
-    id: sessionId,
-    uri: uriFactory.createSessionUri(sessionId, 'src/sample.ts'),
-    repo,
-    originalUri: vscode.Uri.file('c:/repo/src/sample.ts'),
-    relativePath: 'src/sample.ts',
-    revisions,
-    createdAt: Date.now(),
-    rowCount: 1,
-    rawSnapshots: revisions.map((revision, index) => ({
-      snapshotUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
-      rawUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
-      revisionIndex: index,
-      revisionId: revision.id,
-      revisionLabel: revision.shortLabel,
-      relativePath: 'src/sample.ts',
-      lineMap: {
-        rowToOriginalLine: new Map([[1, 1]]),
-        originalLineToRow: new Map([[1, 1]])
-      }
-    })),
-    globalRows: [{
-      rowNumber: 1,
-      cells: revisions.map((revision, index) => ({
-        revisionIndex: index,
-        rowNumber: 1,
-        present: true,
-        text: revision.id,
-        originalLineNumber: 1
-      }))
-    }],
-    adjacentPairs: revisions.slice(0, -1).map((revision, index) => ({
-      key: `${index}:${index + 1}`,
-      leftRevisionIndex: index,
-      rightRevisionIndex: index + 1,
-      label: `${revision.shortLabel}-${revisions[index + 1].shortLabel}`,
-      changedRowNumbers: [1]
-    })),
-    pairProjection: { mode: 'adjacent' },
-    surfaceMode
-  };
-}
-
-function createProjectedSession(sessionId: string, revisions: readonly RevisionRef[]): NWayCompareSession {
-  const uriFactory = new UriFactory(new RepositoryRegistry());
-  const repo: RepoContext = {
-    kind: 'git',
-    repoRoot: 'c:/repo',
-    repoId: 'repo123'
-  };
-
-  return {
-    id: sessionId,
-    uri: uriFactory.createSessionUri(sessionId, 'src/sample.ts'),
-    repo,
-    originalUri: vscode.Uri.file('c:/repo/src/sample.ts'),
-    relativePath: 'src/sample.ts',
-    revisions,
-    createdAt: Date.now(),
-    rowCount: 20,
-    rawSnapshots: revisions.map((revision, index) => ({
-      snapshotUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
-      rawUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
-      revisionIndex: index,
-      revisionId: revision.id,
-      revisionLabel: revision.shortLabel,
-      relativePath: 'src/sample.ts',
-      lineMap: {
-        rowToOriginalLine: new Map([[1, 1]]),
-        originalLineToRow: new Map([[1, 1]])
-      }
-    })),
-    globalRows: Array.from({ length: 20 }, (_, rowIndex) => ({
-      rowNumber: rowIndex + 1,
-      cells: revisions.map((revision, index) => ({
-        revisionIndex: index,
-        rowNumber: rowIndex + 1,
-        present: true,
-        text: `${revision.id}-${rowIndex + 1}`,
-        originalLineNumber: rowIndex + 1
-      }))
-    })),
-    adjacentPairs: revisions.slice(0, -1).map((revision, index) => ({
-      key: `${index}:${index + 1}`,
-      leftRevisionIndex: index,
-      rightRevisionIndex: index + 1,
-      label: `${revision.shortLabel}-${revisions[index + 1].shortLabel}`,
-      changedRowNumbers: [10]
-    })),
-    pairProjection: { mode: 'adjacent' },
-    surfaceMode: 'native'
-  };
-}
-
-function createRevisions(count: number): RevisionRef[] {
-  return Array.from({ length: count }, (_, index) => ({
-    id: `rev-${index}`,
-    shortLabel: `r${index}`
-  }));
-}

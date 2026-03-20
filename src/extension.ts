@@ -66,7 +66,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const memoryMaxSizeMb = getCacheMaxSizeMb();
   const memoryCache = new MemoryCache(memoryMaxSizeMb * 1024 * 1024);
-  const persistentCache = new PersistentCache(context.globalStorageUri);
+  const persistentCache = new PersistentCache(context.globalStorageUri, output);
   const cacheService = new CacheService(memoryCache, persistentCache, output);
 
   const snapshotFsProvider = new SnapshotFsProvider(repositoryService, uriFactory, cacheService, output);
@@ -104,7 +104,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const compareSessionController = new CompareSurfaceCoordinator(
     sessionService,
     nativeCompareSessionController,
-    panelCompareSessionController
+    panelCompareSessionController,
+    output
   );
   const sessionsTreeProvider = new SessionsTreeProvider(sessionService);
   const cacheTreeProvider = new CacheTreeProvider(cacheService);

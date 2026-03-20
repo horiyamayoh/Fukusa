@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 import { CompareSurfaceMode, NWayCompareSession } from '../../adapters/common/types';
 import { SessionService } from '../../application/sessionService';
+import { OutputLogger } from '../../util/output';
 import { NativeCompareSessionController } from '../native/nativeCompareSessionController';
 import { PanelCompareSessionController } from './panelCompareSessionController';
 
@@ -15,7 +16,8 @@ export class CompareSurfaceCoordinator implements vscode.Disposable {
   public constructor(
     private readonly sessionService: SessionService,
     private readonly nativeController: NativeCompareSessionController,
-    private readonly panelController: PanelCompareSessionController
+    private readonly panelController: PanelCompareSessionController,
+    private readonly output?: OutputLogger
   ) {}
 
   public async openSession(session: NWayCompareSession): Promise<void> {
@@ -88,13 +90,18 @@ export class CompareSurfaceCoordinator implements vscode.Disposable {
     try {
       await this.openSessionOnSurface(updatedSession);
       return true;
-    } catch {
+    } catch (error) {
+      this.output?.warn(
+        `Failed to reopen session ${session.id} on ${surfaceMode} surface after switching from ${previousSurfaceMode}: ${toErrorMessage(error)}`
+      );
       const revertedSession = this.sessionService.updateSurfaceMode(session.id, previousSurfaceMode);
       if (revertedSession) {
         try {
           await this.openSessionOnSurface(revertedSession);
-        } catch {
-          // Keep the restored surface mode even if reopening the old surface also fails.
+        } catch (rollbackError) {
+          this.output?.warn(
+            `Failed to restore session ${session.id} on ${previousSurfaceMode} surface after a switch failure: ${toErrorMessage(rollbackError)}`
+          );
         }
       }
 
@@ -204,4 +211,8 @@ export class CompareSurfaceCoordinator implements vscode.Disposable {
   private async closeSessionSurface(session: NWayCompareSession): Promise<boolean> {
     return this.getSurfaceController(session.surfaceMode).closeSessionSurface(session.id);
   }
+}
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

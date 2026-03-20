@@ -2,11 +2,9 @@ import * as assert from 'assert';
 import * as sinon from 'sinon';
 import * as vscode from 'vscode';
 
-import { NWayCompareSession, RepoContext, RevisionRef } from '../../adapters/common/types';
-import { RepositoryRegistry } from '../../application/repositoryRegistry';
 import { SessionService } from '../../application/sessionService';
 import { SessionCommandContextController } from '../../commands/sessionCommandContextController';
-import { UriFactory } from '../../infrastructure/fs/uriFactory';
+import { createRevisions, createSession } from '../helpers/sessionHelpers';
 
 suite('Unit: SessionCommandContextController', () => {
   teardown(() => {
@@ -103,74 +101,6 @@ function assertContextValue(
     .filter((call) => call.args[0] === 'setContext' && call.args[1] === contextKey);
   assert.ok(setContextCalls.length > 0, `Expected context key ${contextKey} to be set.`);
   assert.strictEqual(setContextCalls.at(-1)?.args[2], expectedValue);
-}
-
-function createSession(
-  sessionId: string,
-  revisions: readonly RevisionRef[],
-  surfaceMode: 'native' | 'panel',
-  options: {
-    readonly rowCount?: number;
-    readonly changedRowNumbers?: readonly number[];
-  } = {}
-): NWayCompareSession {
-  const uriFactory = new UriFactory(new RepositoryRegistry());
-  const repo: RepoContext = {
-    kind: 'git',
-    repoRoot: 'c:/repo',
-    repoId: 'repo123'
-  };
-  const rowCount = options.rowCount ?? 1;
-  const changedRowNumbers = options.changedRowNumbers ?? [1];
-
-  return {
-    id: sessionId,
-    uri: uriFactory.createSessionUri(sessionId, 'src/sample.ts'),
-    repo,
-    originalUri: vscode.Uri.file('c:/repo/src/sample.ts'),
-    relativePath: 'src/sample.ts',
-    revisions,
-    createdAt: Date.now(),
-    rowCount,
-    rawSnapshots: revisions.map((revision, index) => ({
-      snapshotUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
-      rawUri: vscode.Uri.file(`c:/repo/.fukusa-shadow/revisions/${revision.id}/src/sample.ts`),
-      revisionIndex: index,
-      revisionId: revision.id,
-      revisionLabel: revision.shortLabel,
-      relativePath: 'src/sample.ts',
-      lineMap: {
-        rowToOriginalLine: new Map([[1, 1]]),
-        originalLineToRow: new Map([[1, 1]])
-      }
-    })),
-    globalRows: Array.from({ length: rowCount }, (_, rowIndex) => ({
-      rowNumber: rowIndex + 1,
-      cells: revisions.map((revision, index) => ({
-        revisionIndex: index,
-        rowNumber: rowIndex + 1,
-        present: true,
-        text: `${revision.id}-${rowIndex + 1}`,
-        originalLineNumber: rowIndex + 1
-      }))
-    })),
-    adjacentPairs: revisions.slice(0, -1).map((revision, index) => ({
-      key: `${index}:${index + 1}`,
-      leftRevisionIndex: index,
-      rightRevisionIndex: index + 1,
-      label: `${revision.shortLabel}-${revisions[index + 1].shortLabel}`,
-      changedRowNumbers
-    })),
-    pairProjection: { mode: 'adjacent' },
-    surfaceMode
-  };
-}
-
-function createRevisions(count: number): RevisionRef[] {
-  return Array.from({ length: count }, (_, index) => ({
-    id: `rev-${index}`,
-    shortLabel: `r${index}`
-  }));
 }
 
 async function flushAsyncWork(): Promise<void> {

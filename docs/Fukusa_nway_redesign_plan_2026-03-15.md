@@ -432,7 +432,7 @@ compare viewer は読むための面です。
 | `EditorLayoutController` | 廃止 | compare 主表示面で editor group layout を組まなくなる |
 | `openSessionAdjacent` / `openSessionBase` | 置き換え | compare session 起動 + overlay preset へ再設計 |
 | `shiftWindowLeft` / `shiftWindowRight` | 廃止候補 | 新しい compare surface では不要になる可能性が高い |
-| `Fukusa_design_v0.2.md` | archive 扱い | 「Native Editor First」が今回の要件と衝突する |
+| `archive/Fukusa_design_v0.2.md` | archive 扱い | 「Native Editor First」が今回の要件と衝突する |
 
 ### 9.4 保留・後回しでよいもの
 

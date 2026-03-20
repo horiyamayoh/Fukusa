@@ -1,10 +1,16 @@
 import { diffLines } from 'diff';
 
+/**
+ * A single canonical line entry from one source document.
+ */
 export interface CanonicalEntry {
   readonly lineNumber: number;
   readonly text: string;
 }
 
+/**
+ * A row in the canonical N-way alignment table.
+ */
 export interface CanonicalRow {
   readonly entries: Array<CanonicalEntry | undefined>;
 }
@@ -23,7 +29,13 @@ interface PreparedLine {
 const MATCH_SIMILARITY_THRESHOLD = 0.3;
 const MATCH_LOOKAHEAD = 6;
 const MAX_ALIGNMENT_MATRIX_CELLS = 1_500_000;
+const EXACT_TEXT_MATCH_SCORE = 100;
+const NORMALIZED_TEXT_MATCH_SCORE = 95;
+const SIMILARITY_PERCENT_SCALE = 100;
 
+/**
+ * Builds canonical rows across every revision source in order.
+ */
 export function buildCanonicalRows(linesBySource: readonly string[][]): CanonicalRow[] {
   const documentCount = linesBySource.length;
   if (documentCount === 0) {
@@ -341,11 +353,11 @@ function buildGreedyReplacementMatches(
 
 function scoreLinePair(left: PreparedLine, right: PreparedLine): number {
   if (left.text === right.text) {
-    return 100;
+    return EXACT_TEXT_MATCH_SCORE;
   }
 
   if (left.normalizedText === right.normalizedText) {
-    return 95;
+    return NORMALIZED_TEXT_MATCH_SCORE;
   }
 
   const similarity = computeSimilarity(left, right);
@@ -353,7 +365,7 @@ function scoreLinePair(left: PreparedLine, right: PreparedLine): number {
     return 0;
   }
 
-  return Math.max(1, Math.round(similarity * 100));
+  return Math.max(1, Math.round(similarity * SIMILARITY_PERCENT_SCALE));
 }
 
 function computeSimilarity(left: PreparedLine, right: PreparedLine): number {

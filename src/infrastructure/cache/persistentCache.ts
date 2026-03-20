@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 
 import { CacheEntryMetadata, CacheOverviewItem, CacheValueKind } from '../../adapters/common/types';
 import { stableHash } from '../../util/hash';
+import { OutputLogger } from '../../util/output';
 
 interface PersistedIndexEntry {
   readonly kind: CacheValueKind;
@@ -54,7 +55,7 @@ export class PersistentCache {
   private readonly indexPath: string;
   private readonly index = new Map<string, PersistedIndexEntry>();
 
-  public constructor(storageUri: vscode.Uri) {
+  public constructor(storageUri: vscode.Uri, private readonly output?: OutputLogger) {
     this.rootPath = path.join(storageUri.fsPath, 'cache');
     this.indexPath = path.join(this.rootPath, 'index.json');
   }
@@ -80,7 +81,8 @@ export class PersistentCache {
         value: entry.kind === 'binary' ? new Uint8Array(data) : JSON.parse(data.toString('utf8')),
         metadata: entry.metadata
       };
-    } catch {
+    } catch (error) {
+      this.output?.warn(`Dropping unreadable cache entry ${key}: ${toErrorMessage(error)}`);
       this.index.delete(key);
       await this.writeIndex();
       return undefined;
@@ -276,4 +278,8 @@ export class PersistentCache {
 
     return path.join(this.rootPath, ...normalized.split('/'));
   }
+}
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
