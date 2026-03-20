@@ -65,8 +65,8 @@ Single-tab compare panel:
 | `CLAUDE.md` | Agent-facing development guide. |
 | `CHANGELOG.md` | Release history in Keep a Changelog format. |
 | `PUBLISHING.md` | Marketplace publishing checklist. |
+| `docs/N_WAY_PARITY_AUDIT.md` | Living parity audit and progress tracker against native 2-way diff UX. |
 | `docs/USER_GUIDE.md` | End-user guide. |
 | `docs/SPEC.md` | Reverse-engineered specification. |
 | `docs/archive/Fukusa_design_v0.2.md` | Deprecated design document archive. |
 | `docs/adr_001_*` to `docs/adr_010_*` | Architecture Decision Records. |
-

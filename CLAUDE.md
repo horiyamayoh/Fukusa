@@ -114,6 +114,7 @@ The algorithm is intentionally conservative. It preserves gap rows so the shared
 | `CLAUDE.md` | This file |
 | `CHANGELOG.md` | Keep a Changelog format |
 | `PUBLISHING.md` | Marketplace publishing checklist |
+| `docs/N_WAY_PARITY_AUDIT.md` | Living parity audit and progress tracker |
 | `docs/SPEC.md` | Current reverse-engineered specification |
 | `docs/USER_GUIDE.md` | End-user guide |
 | `docs/archive/Fukusa_design_v0.2.md` | Deprecated archived design document |
